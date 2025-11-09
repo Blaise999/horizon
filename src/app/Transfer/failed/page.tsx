@@ -1,8 +1,7 @@
-// src/app/Transfer/failed/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Nav from '@/app/dashboard/dashboardnav';
 import { AlertTriangle, RefreshCcw, LifeBuoy, ArrowRight } from 'lucide-react';
 
@@ -21,43 +20,28 @@ type FailedSummary = {
   note?: string;
 };
 
-function Info({ label, value }: { label: string; value?: string }) {
+export default function TransferFailedPage() {
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
-      <div className="text-xs text-white/60">{label}</div>
-      <div className="mt-1 text-base font-medium">{value || '—'}</div>
-    </div>
+    <Suspense
+      fallback={
+        <main className="min-h-svh bg-[#0E131B] text-white">
+          <section className="container-x pt-[120px] pb-24">
+            <div className="max-w-3xl mx-auto rounded-3xl border border-white/15 bg-white/[0.04] p-8" />
+          </section>
+        </main>
+      }
+    >
+      <Inner />
+    </Suspense>
   );
 }
 
-function railLabel(t: FailedSummary['type']) {
-  switch (t) {
-    case 'ach':
-      return 'ACH (Standard)';
-    case 'wire_domestic':
-      return 'Wire (Domestic)';
-    case 'wire_international':
-      return 'SWIFT / International';
-    case 'crypto':
-      return 'Crypto';
-    default:
-      return 'Transfer';
-  }
-}
-
-export default function TransferFailedPage() {
+function Inner() {
   const router = useRouter();
+  const params = useSearchParams();
 
   const [userName, setUserName] = useState('User');
   const [setupPercent, setSetupPercent] = useState<number | undefined>(undefined);
-
-  // Read query string without useSearchParams (avoids Suspense requirement)
-  const [qs, setQs] = useState<URLSearchParams | null>(null);
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setQs(new URLSearchParams(window.location.search));
-    }
-  }, []);
 
   const data: FailedSummary = useMemo(() => {
     let fromLS: any;
@@ -67,8 +51,7 @@ export default function TransferFailedPage() {
         if (raw) fromLS = JSON.parse(raw);
       } catch {}
     }
-
-    const q = (k: string, d = '') => (qs ? qs.get(k) ?? d : d);
+    const q = (k: string, d = '') => params.get(k) ?? d;
 
     const fallback: FailedSummary = {
       status: 'failed',
@@ -100,7 +83,7 @@ export default function TransferFailedPage() {
     };
 
     return fromLS && fromLS.status === 'failed' ? fromLS : fallback;
-  }, [qs]);
+  }, [params]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -169,4 +152,28 @@ export default function TransferFailedPage() {
       </section>
     </main>
   );
+}
+
+function Info({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
+      <div className="text-xs text-white/60">{label}</div>
+      <div className="mt-1 text-base font-medium">{value || '—'}</div>
+    </div>
+  );
+}
+
+function railLabel(t: FailedSummary['type']) {
+  switch (t) {
+    case 'ach':
+      return 'ACH (Standard)';
+    case 'wire_domestic':
+      return 'Wire (Domestic)';
+    case 'wire_international':
+      return 'SWIFT / International';
+    case 'crypto':
+      return 'Crypto';
+    default:
+      return 'Transfer';
+  }
 }
