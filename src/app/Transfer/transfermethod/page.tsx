@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Nav from "@/app/dashboard/dashboardnav";
 import { ChevronsRight, Search } from "lucide-react";
 
@@ -159,6 +159,9 @@ export default function TransferMethodsPage() {
             <label className="hidden md:flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/10 border border-white/20 shadow-inner">
               <Search className="opacity-70 h-4 w-4" />
               <input
+                type="search"
+                aria-label="Search methods"
+                autoComplete="off"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search methods..."
@@ -211,7 +214,7 @@ type Method = {
   title: string;
   desc: string;
   href: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   tag: string;
   /** Tailwind classes to apply brand accent on the icon container */
   brandBg: string;
