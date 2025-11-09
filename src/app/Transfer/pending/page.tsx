@@ -1,4 +1,6 @@
-// app/Transfer/pending/page.tsx
+
+
+// app/Transfer/pending/Pending.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -272,7 +274,7 @@ function mapQueryToSummary(params: URLSearchParams): PendingSummary {
 
 /* -------------------------------- component -------------------------------- */
 
-export default function TransferPendingPage() {
+export default function Pending() {
   const router = useRouter();
   const params = useSearchParams();
 

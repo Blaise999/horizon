@@ -1,3 +1,5 @@
+
+// app/Transfer/success/Success.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -67,7 +69,7 @@ function currencyFmt(n: number, ccy = "USD") {
   return n.toLocaleString(undefined, { style: "currency", currency: ccy });
 }
 
-export default function TransferSuccessPage() {
+export default function Success() {
   const router = useRouter();
   const params = useSearchParams();
 
