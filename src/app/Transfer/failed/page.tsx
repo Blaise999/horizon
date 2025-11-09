@@ -1,9 +1,8 @@
 // src/app/Transfer/failed/page.tsx
 'use client';
 
-import { Suspense } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Nav from '@/app/dashboard/dashboardnav';
 import { AlertTriangle, RefreshCcw, LifeBuoy, ArrowRight } from 'lucide-react';
 
@@ -16,12 +15,7 @@ type FailedSummary = {
   createdAt: string;
   amount: { value: number; currency: string };
   sender: { accountName: string; accountMasked: string };
-  recipient: {
-    name: string;
-    accountMasked?: string;
-    cryptoAddress?: string;
-    network?: string;
-  };
+  recipient: { name: string; accountMasked?: string; cryptoAddress?: string; network?: string };
   referenceId: string;
   error: { code?: string; message: string };
   note?: string;
@@ -51,12 +45,19 @@ function railLabel(t: FailedSummary['type']) {
   }
 }
 
-function FailedInner() {
+export default function TransferFailedPage() {
   const router = useRouter();
-  const params = useSearchParams();
 
   const [userName, setUserName] = useState('User');
   const [setupPercent, setSetupPercent] = useState<number | undefined>(undefined);
+
+  // Read query string without useSearchParams (avoids Suspense requirement)
+  const [qs, setQs] = useState<URLSearchParams | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setQs(new URLSearchParams(window.location.search));
+    }
+  }, []);
 
   const data: FailedSummary = useMemo(() => {
     let fromLS: any;
@@ -67,10 +68,11 @@ function FailedInner() {
       } catch {}
     }
 
-    const q = (k: string, d = '') => params.get(k) ?? d;
+    const q = (k: string, d = '') => (qs ? qs.get(k) ?? d : d);
 
     const fallback: FailedSummary = {
       status: 'failed',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: (q('type', 'ach') as any),
       createdAt: new Date().toISOString(),
       amount: { value: Number(q('amount', '250')), currency: q('ccy', 'USD') },
@@ -98,7 +100,7 @@ function FailedInner() {
     };
 
     return fromLS && fromLS.status === 'failed' ? fromLS : fallback;
-  }, [params]);
+  }, [qs]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -166,29 +168,5 @@ function FailedInner() {
         </div>
       </section>
     </main>
-  );
-}
-
-export default function Page() {
-  return (
-    <Suspense
-      fallback={
-        <main className="min-h-svh bg-[#0E131B] text-white">
-          <section className="container-x pt-[120px] pb-24">
-            <div className="max-w-3xl mx-auto rounded-3xl border border-white/15 bg-white/[0.04] p-8">
-              <div className="h-6 w-40 rounded bg-white/10" />
-              <div className="mt-6 grid sm:grid-cols-2 gap-4">
-                <div className="h-16 rounded-2xl border border-white/10 bg-white/5" />
-                <div className="h-16 rounded-2xl border border-white/10 bg-white/5" />
-                <div className="h-16 rounded-2xl border border-white/10 bg-white/5" />
-                <div className="h-16 rounded-2xl border border-white/10 bg-white/5" />
-              </div>
-            </div>
-          </section>
-        </main>
-      }
-    >
-      <FailedInner />
-    </Suspense>
   );
 }
