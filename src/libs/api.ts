@@ -9,6 +9,7 @@ const BASE = API_BASE;
 function joinApi(path: string) {
   if (!path) return BASE;
   const p = path.startsWith("/") ? path : `/${path}`;
+  // If BASE already ends with /api and caller passes /api/..., avoid double /api
   if (BASE.endsWith("/api") && p.startsWith("/api/")) {
     return `${BASE}${p.replace(/^\/api/, "")}`;
   }
@@ -112,7 +113,7 @@ async function coreFetch(
   try {
     const res = await fetch(url, { ...init, signal });
     const ct = res.headers.get("content-type") || "";
-    const isJson = ct.includes("application/json");
+    const isJson = /\bjson\b/i.test(ct); // supports application/json and +json
     const text = await res.text().catch(() => "");
     const data = isJson
       ? (() => {
@@ -131,12 +132,23 @@ async function coreFetch(
   }
 }
 
-function isRetryableError(err: any) {
+/** Accepts either an Error or a `{ ok:false, status }`-like object */
+function isRetryable(err: any) {
   if (!err) return false;
-  if (err.name === "AbortError") return true; // timeout/abort
-  if (err instanceof TypeError) return true; // network errors in fetch
-  if (typeof err.message === "string" && /network|timeout/i.test(err.message)) return true;
+
+  // If it's our structured failure object from requestSafe
+  if (typeof err === "object" && "ok" in err && err.ok === false) {
+    return typeof err.status === "number" && err.status >= 500;
+  }
+
+  // Abort/network errors
+  if (err?.name === "AbortError") return true;
+  if (err instanceof TypeError) return true;
+  if (typeof err?.message === "string" && /network|timeout/i.test(err.message)) return true;
+
+  // HTTP 5xx wrapped in ApiError
   if (err instanceof ApiError && err.status >= 500) return true;
+
   return false;
 }
 
@@ -186,7 +198,7 @@ export async function request<T = any>(path: string, opts: ReqOpts = {}) {
   try {
     return await attempt();
   } catch (e) {
-    if (isRetryableError(e)) {
+    if (isRetryable(e)) {
       return await attempt();
     }
     throw e;
@@ -233,7 +245,7 @@ export async function requestSafe<T = any>(
     };
 
     const first = await exec();
-    if (!first.ok && isRetryableError(first)) {
+    if (!first.ok && isRetryable(first)) {
       return await exec();
     }
     return first;
@@ -687,7 +699,7 @@ export const API = {
     request("/admin/config/update", { method: "POST", json }),
   adminGetAuditLogs: () => request("/admin/audit/logs"),
 
-  /* Notifications (USER) — new canonical endpoints under /users/me */
+  /* Notifications (USER) — canonical under /users/me */
   myNotifications: () =>
     request<{ items: any[] }>("/users/me/notifications"),
   markNotificationRead: (id: string) =>
