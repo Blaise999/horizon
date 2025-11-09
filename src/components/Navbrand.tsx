@@ -55,7 +55,7 @@ export default function NavBrand() {
             aria-label="Horizon Home"
           >
             <img
-              src="/hero/logo.png"
+              src="/Hero/logo.png"
               alt="Horizon"
               className="select-none"
               draggable={false}
@@ -110,7 +110,7 @@ export default function NavBrand() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3 -ml-1">
                   <img
-                    src="/hero/logo.png"
+                    src="/Hero/logo.png"
                     alt="Horizon"
                     className="select-none"
                     draggable={false}

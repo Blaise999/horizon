@@ -29,7 +29,7 @@ type LogoProps = {
 
 export default function Logo({
   height = 56,
-  src = "/hero/logo.png",
+  src = "/Hero/logo.png",
   wordmarkSrc,
   showWordmark = true,
   href = "/",

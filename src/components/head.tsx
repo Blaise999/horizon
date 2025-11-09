@@ -136,7 +136,7 @@ export default function Nav() {
           {/* Left: Logo */}
           <Link href={to("HOME")} className="flex items-center gap-3 -ml-1 sm:-ml-2" aria-label="Horizon Home">
             <img
-              src="/hero/logo.png"
+              src="/Hero/logo.png"
               alt="Horizon"
               className="w-auto select-none"
               draggable={false}
@@ -300,7 +300,7 @@ export default function Nav() {
               <div className="sticky top-0 z-10 -mx-5 px-5 pb-3 pt-1 bg-transparent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 -ml-1">
-                    <img src="/hero/logo.png" alt="Horizon" className="select-none" draggable={false} style={{ height: 56, width: "auto" }} />
+                    <img src="/Hero/logo.png" alt="Horizon" className="select-none" draggable={false} style={{ height: 56, width: "auto" }} />
                   </div>
                   <button
                     aria-label="Close menu"

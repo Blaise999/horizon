@@ -2,8 +2,31 @@
 // Horizon — Frontend API client (Next.js, fetch)
 
 /* ───────────────────────── Base/Joiner ───────────────────────── */
+function sanitizeBase(raw?: string) {
+  let b = (raw ?? "").trim();
+  if (!b) b = "/api";
+  b = b.replace(/\/+$/, ""); // strip trailing slashes
+
+  // Detect unresolved placeholders or obviously invalid values
+  const looksPlaceholder =
+    /<|>|your[-_ ]?render[-_ ]?backend|YOUR-RENDER|example\.com/i.test(b);
+  if (looksPlaceholder) {
+    if (typeof window !== "undefined") {
+      // Visible, actionable error for devs
+      // eslint-disable-next-line no-console
+      console.error(
+        "[API] Invalid NEXT_PUBLIC_API_URL:",
+        b,
+        "→ falling back to relative '/api'. Set a real absolute URL, e.g. https://your-render-service.onrender.com/api"
+      );
+    }
+    return "/api";
+  }
+  return b;
+}
+
 const RAW_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
-export const API_BASE = RAW_BASE.replace(/\/+$/, "");
+export const API_BASE = sanitizeBase(RAW_BASE);
 const BASE = API_BASE;
 
 function joinApi(path: string) {
@@ -14,6 +37,28 @@ function joinApi(path: string) {
     return `${BASE}${p.replace(/^\/api/, "")}`;
   }
   return `${BASE}${p}`;
+}
+
+// Ensure a URL is parseable by the browser; throw a friendly error otherwise.
+function ensureParsable(url: string) {
+  try {
+    if (/^https?:\/\//i.test(url)) {
+      // absolute URL
+      new URL(url);
+    } else if (typeof window !== "undefined") {
+      // relative in browser
+      new URL(url, window.location.origin);
+    } else {
+      // relative in SSR
+      new URL(url, "http://localhost");
+    }
+  } catch {
+    throw new ApiError(
+      `Invalid request URL (${url}). Check NEXT_PUBLIC_API_URL (currently: "${RAW_BASE}")`,
+      0,
+      url
+    );
+  }
 }
 
 type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
@@ -95,6 +140,8 @@ async function coreFetch(
   url: string,
   init: RequestInit & { timeoutMs?: number }
 ) {
+  ensureParsable(url);
+
   const timeoutCtrl = new AbortController();
   const timeoutMs = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -279,6 +326,7 @@ export async function requestRaw(
     [init.signal, timeoutCtrl.signal].filter(Boolean) as AbortSignal[]
   );
 
+  ensureParsable(url);
   try {
     return await fetch(url, {
       cache: "no-store",

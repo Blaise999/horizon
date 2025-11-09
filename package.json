@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "prebuild": "node scripts/sync-public-images.mjs",
 "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
+  
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@lottiefiles/react-lottie-player": "^3.6.0",

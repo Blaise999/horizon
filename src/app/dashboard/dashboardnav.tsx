@@ -230,7 +230,7 @@ export default function DashboardNav({
               aria-label="Horizon Dashboard"
             >
               <img
-                src="/hero/logo.png"
+                src="/Hero/logo.png"
                 alt="Horizon"
                 className="w-auto select-none"
                 draggable={false}
@@ -422,7 +422,7 @@ export default function DashboardNav({
             {/* Header row (non-sticky) */}
             <div className="mb-4 flex items-center justify-between">
               <img
-                src="/hero/logo.png"
+                src="/Hero/logo.png"
                 alt="Horizon"
                 className="select-none"
                 draggable={false}

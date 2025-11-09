@@ -467,7 +467,7 @@ export function HeroDemo() {
 
   const slides: HeroSlide[] = [
     {
-      bg: "url(/hero/vault.jpg)",
+      bg: "url(/Hero/vault.jpg)",
       mobileBgClass: "scale-110 sm:scale-100",
       left: (
         <Glass>
@@ -542,7 +542,7 @@ export function HeroDemo() {
       ),
     },
     {
-      bg: "url(/hero/cards.jpg)",
+      bg: "url(/Hero/cards.jpg)",
       mobileBgClass: "scale-110 sm:scale-100",
       left: (
         <Glass>
@@ -593,7 +593,7 @@ export function HeroDemo() {
       ],
     },
     {
-      bg: "url(/hero/global.jpg)",
+      bg: "url(/Hero/global.jpg)",
       mobileBgClass: "scale-110 sm:scale-100",
       left: (
         <Glass>
