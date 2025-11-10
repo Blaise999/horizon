@@ -18,7 +18,7 @@ import {
 import Logo from "@/components/logo";
 import { Button, Input, Label } from "@/components/primitives";
 import { PATHS } from "@/config/routes";
-import API, { API_BASE } from "@/libs/api";
+import API from "@/libs/api";
 import { registerThisDevice } from "@/libs/fp";
 
 /* -------------------------------------------------------------------------- */
@@ -26,13 +26,14 @@ import { registerThisDevice } from "@/libs/fp";
 /*  - Email+Password -> /auth/login (sets cookies)                            */
 /*  - OTP gate -> /auth/otp/send + /auth/otp/verify                           */
 /*  - After OTP:                                                              */
-/*      -> route from SERVER TRUTH only (no localStorage gating)              */
+/*      -> if no PIN/passkey, go to onboarding to set with /users/me/security */
+/*      -> else proceed (and Quick Login available next time)                 */
 /*  - Quick Login:                                                            */
-/*      • PIN  -> /auth/pin/login (same server-truth routing)                 */
+/*      • PIN  -> /auth/pin/login                                             */
 /*      • Passkey (WebAuthn) -> /webauthn/assertion/options + /result         */
 /* -------------------------------------------------------------------------- */
 
-const BASE = API_BASE || "/api"; // used only for WebAuthn helpers here
+const BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -59,7 +60,7 @@ export default function LoginPage() {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
 
-  // Seed passkey flag from local cache (UX only; server is source of truth)
+  // Seed passkey flag from local cache (not auth-critical; server is source of truth)
   useEffect(() => {
     try {
       const passkey = localStorage.getItem("hb_passkey") === "1";
@@ -91,13 +92,18 @@ export default function LoginPage() {
       // 1) Login (sets httpOnly cookies)
       const res = await API.login(email, password);
 
-      // optional UX hints
+      // cache optional flags for UX
       try {
         if (res?.flags?.hb_passkey) localStorage.setItem("hb_passkey", res.flags.hb_passkey);
+        if (typeof res?.onboarding?.setupPercent === "number") {
+          localStorage.setItem("hb_setup_percent", String(res.onboarding.setupPercent));
+        }
+        if (res?.onboarding?.status)
+          localStorage.setItem("hb_onboarding_status", res.onboarding.status);
         localStorage.setItem("hb_logged_in", "1");
       } catch {}
 
-      // 2) Force OTP step
+      // 2) Force OTP to harden login flow
       setOtpOpen(true);
       await sendOtpNow(email);
     } catch (e: any) {
@@ -131,22 +137,32 @@ export default function LoginPage() {
     }
     setOtpVerifying(true);
     try {
-      // 1) Verify (sets cookies)
+      // 3) Verify OTP
       await API.verifyOtp(email, code);
       setOtpOpen(false);
 
-      // 2) Pull SERVER TRUTH and route only from it (ignore localStorage flags)
-      const user = await API.meUser();
+      // 4) Ask backend for current security state
+      const me = await API.me().catch(() => null);
+      const hasPin = !!me?.user?.hasPin;
+      const passkeyEnabled = !!me?.user?.passkeyEnabled;
 
-      // optional: non-blocking device bind (doesn't impact routing)
-      registerThisDevice(user?.passkeyEnabled ? { type: "passkey" } : undefined);
+      // 4.5) Register/update this device fingerprint on the backend
+  try {
+     await registerThisDevice(passkeyEnabled ? { type: "passkey" } : undefined);
+   } catch { /* non-blocking */ }
 
-      const isOnboarded =
-        user?.onboardingStatus === "COMPLETE" ||
-        (user?.setupPercent ?? 0) >= 100 ||
-        !!user?.hasPin;
+      // 5) If neither PIN nor passkey saved yet, send to onboarding to collect & save to backend
+      if (!hasPin && !passkeyEnabled) {
+        localStorage.setItem("hb_onboarding_status", "IN_PROGRESS");
+        router.replace(PATHS.DASHBOARD_ONBOARDING); // Your onboarding should POST /users/me/security
+        return;
+      }
 
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      // Otherwise continue to app
+      const status = localStorage.getItem("hb_onboarding_status");
+      const setup = Number(localStorage.getItem("hb_setup_percent") || 0);
+      if (status === "COMPLETE" || setup >= 95) router.replace(PATHS.DASHBOARD_HOME);
+      else router.replace(PATHS.DASHBOARD_ONBOARDING);
     } catch (e: any) {
       setOtpError(e?.message || "Verification failed.");
     } finally {
@@ -159,17 +175,21 @@ export default function LoginPage() {
   async function handlePinLogin() {
     setQuickError("");
     try {
-      // Use API wrapper (sets cookies with credentials)
-      await API.pinLogin(pinEmail, pin);
+      const res = await fetch(`${BASE}/auth/pin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pinEmail, pin }),
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.message || "PIN login failed");
 
-      // Confirm from server and route using the same logic as OTP
-      const user = await API.meUser();
-      const isOnboarded =
-        user?.onboardingStatus === "COMPLETE" ||
-        (user?.setupPercent ?? 0) >= 100 ||
-        !!user?.hasPin;
-
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      // success: backend sets cookies; optional FE flags
+      try {
+        if (data?.flags?.hb_passkey) localStorage.setItem("hb_passkey", data.flags.hb_passkey);
+        localStorage.setItem("hb_logged_in", "1");
+      } catch {}
+      router.replace(PATHS.DASHBOARD_HOME);
     } catch (e: any) {
       setQuickError(e?.message || "Incorrect PIN or email.");
     }
@@ -184,7 +204,6 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pinEmail }),
         cache: "no-store",
-        credentials: "include",
       });
       const options = await optRes.json().catch(() => ({}));
       if (!optRes.ok) throw new Error(options?.error || "Unable to start fingerprint login.");
@@ -209,19 +228,12 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentialToJSON(assertion, pinEmail)),
         cache: "no-store",
-        credentials: "include",
       });
       const result = await resultRes.json().catch(() => ({}));
       if (!resultRes.ok) throw new Error(result?.error || "Fingerprint login failed.");
 
-      // Route from server truth
-      const user = await API.meUser();
-      const isOnboarded =
-        user?.onboardingStatus === "COMPLETE" ||
-        (user?.setupPercent ?? 0) >= 100 ||
-        !!user?.hasPin;
-
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      localStorage.setItem("hb_logged_in", "1");
+      router.replace(PATHS.DASHBOARD_HOME);
     } catch (e: any) {
       setQuickError(
         e?.message ||
@@ -270,8 +282,8 @@ export default function LoginPage() {
             </button>
             <button
               className={`px-3 py-1 rounded-full text-xs ${
-                usePin ? "bg[#00B4D8]/20 text-[#00E0FF]" : "bg-white/5 text-[#9BB0C6]"
-              }`.replace("bg[#00B4D8]", "bg-[#00B4D8]")}
+                usePin ? "bg-[#00B4D8]/20 text-[#00E0FF]" : "bg-white/5 text-[#9BB0C6]"
+              }`}
               onClick={() => setUsePin(true)}
             >
               Quick Login
@@ -334,10 +346,7 @@ export default function LoginPage() {
 
               <p className="text-xs text-center text-[#9BB0C6] mt-4">
                 Don’t have an account?{" "}
-                <button
-                  className="text-[#00E0FF] hover:underline"
-                  onClick={() => router.push(PATHS.CREATE_ACCOUNT)}
-                >
+                <button className="text-[#00E0FF] hover:underline" onClick={() => router.push(PATHS.CREATE_ACCOUNT)}>
                   Create one
                 </button>
               </p>
@@ -483,12 +492,7 @@ export default function LoginPage() {
 
 /* ------------------------------ Utilities ------------------------------ */
 
-function handleOtpChange(
-  i: number,
-  val: string,
-  otp: string[],
-  setOtp: (v: string[]) => void
-) {
+function handleOtpChange(i: number, val: string, otp: string[], setOtp: (v: string[]) => void) {
   const clean = val.replace(/\D/g, "").slice(0, 1);
   const next = [...otp];
   next[i] = clean;
