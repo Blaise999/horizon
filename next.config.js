@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+const strip = (s = "") => s.replace(/\/+$/, "");
+const stripApi = (s = "") => s.replace(/\/api$/i, "");
+
 const nextConfig = {
   // Keep builds unblocked while you iterate fast
   eslint: { ignoreDuringBuilds: true },
@@ -21,16 +24,18 @@ const nextConfig = {
   },
 
   async rewrites() {
+    // Single source of truth for backend origin (works in dev & prod)
+    // Prefer BACKEND_ORIGIN, else NEXT_PUBLIC_API_URL, else sensible defaults
+    const envBase =
+      strip(process.env.BACKEND_ORIGIN) ||
+      strip(process.env.NEXT_PUBLIC_API_URL);
+
     const isProd = process.env.NODE_ENV === "production";
+    const fallback = isProd
+      ? "https://horizon-backend-jsuw.onrender.com"
+      : "http://localhost:4000";
 
-    // In production: no rewrites. The frontend should call the absolute API base.
-    if (isProd) return [];
-
-    // Dev: proxy /api → http://localhost:4000/api (or the origin from NEXT_PUBLIC_API_URL)
-    // This keeps cookies first-party in dev and avoids CORS headaches.
-    const envBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
-    // If devs accidentally set NEXT_PUBLIC_API_URL to ".../api", strip it to get the origin
-    const origin = (envBase || "http://localhost:4000").replace(/\/api$/i, "");
+    const origin = strip(stripApi(envBase || fallback));
 
     return [
       {
@@ -40,7 +45,7 @@ const nextConfig = {
     ];
   },
 
-  // Optional: add basic security headers for all routes (static + app routes)
+  // Optional: basic security headers
   async headers() {
     return [
       {
@@ -49,7 +54,10 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
         ],
       },
     ];

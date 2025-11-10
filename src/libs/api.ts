@@ -1,8 +1,8 @@
 // src/lib/api.ts
 // Horizon — Frontend API client (Next.js, fetch)
-// - Safe BASE handling with /api default (first-party cookies in prod)
+// - Default BASE = "/api" (first-party cookies in prod w/ Next rewrites)
 // - Smart joiner avoids /api//api duplication
-// - Robust request() / requestSafe() with timeout, retry on transient errors
+// - Robust request()/requestSafe() with timeout + single retry on transient errors
 // - Never synthesizes recipient:{} in string mode (prevents backend trim() crashes)
 // - Adds Idempotency-Key automatically for mutating requests (override/disable via opts)
 
@@ -17,7 +17,6 @@ function sanitizeBase(raw?: string) {
     /<|>|your[-_ ]?render[-_ ]?backend|YOUR-RENDER|example\.com/i.test(b);
   if (looksPlaceholder) {
     if (typeof window !== "undefined") {
-      // Visible, actionable error for devs
       // eslint-disable-next-line no-console
       console.error(
         "[API] Invalid NEXT_PUBLIC_API_URL:",
@@ -62,14 +61,11 @@ export { ApiError };
 function ensureParsable(url: string) {
   try {
     if (/^https?:\/\//i.test(url)) {
-      // absolute URL
-      new URL(url);
+      new URL(url); // absolute
     } else if (typeof window !== "undefined") {
-      // relative in browser
-      new URL(url, window.location.origin);
+      new URL(url, window.location.origin); // relative in browser
     } else {
-      // relative in SSR
-      new URL(url, "http://localhost");
+      new URL(url, "http://localhost"); // relative in SSR
     }
   } catch {
     throw new ApiError(
@@ -229,7 +225,7 @@ export async function request<T = any>(path: string, opts: ReqOpts = {}) {
         : headers["Idempotency-Key"]
         ? null
         : typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
+        ? (crypto as any).randomUUID()
         : Math.random().toString(36).slice(2);
     if (wantIdem) headers["Idempotency-Key"] = wantIdem;
   }
@@ -303,7 +299,7 @@ export async function requestSafe<T = any>(
           : headers["Idempotency-Key"]
           ? null
           : typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
+          ? (crypto as any).randomUUID()
           : Math.random().toString(36).slice(2);
       if (wantIdem) headers["Idempotency-Key"] = wantIdem;
     }
@@ -658,7 +654,7 @@ export const API = {
   /* Insights */
   myInsights: () => request("/users/me/insights"),
 
-  /* Prices (fallback route supported by server) */
+  /* Prices (served by Next route /api/prices) */
   getPrices: (ids = "bitcoin", vs = "usd") =>
     request(`/prices?ids=${encodeURIComponent(ids)}&vs=${encodeURIComponent(vs)}`),
 
