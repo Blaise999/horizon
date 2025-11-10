@@ -1,5 +1,10 @@
 // src/lib/api.ts
 // Horizon — Frontend API client (Next.js, fetch)
+// - Safe BASE handling with /api default (first-party cookies in prod)
+// - Smart joiner avoids /api//api duplication
+// - Robust request() / requestSafe() with timeout, retry on transient errors
+// - Never synthesizes recipient:{} in string mode (prevents backend trim() crashes)
+// - Adds Idempotency-Key automatically for mutating requests (override/disable via opts)
 
 /* ───────────────────────── Base/Joiner ───────────────────────── */
 function sanitizeBase(raw?: string) {
@@ -40,6 +45,20 @@ function joinApi(path: string) {
 }
 
 // Ensure a URL is parseable by the browser; throw a friendly error otherwise.
+class ApiError extends Error {
+  status: number;
+  body: any;
+  url: string;
+  constructor(message: string, status: number, url: string, body?: any) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+    this.url = url;
+  }
+}
+export { ApiError };
+
 function ensureParsable(url: string) {
   try {
     if (/^https?:\/\//i.test(url)) {
@@ -73,21 +92,11 @@ type ReqOpts = {
   credentials?: RequestCredentials;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Provide a custom Idempotency-Key string, or false to disable auto-key for mutating requests */
+  idempotency?: string | false;
 };
 
 /* ───────────────────────── Errors/Fetch ───────────────────────── */
-export class ApiError extends Error {
-  status: number;
-  body: any;
-  url: string;
-  constructor(message: string, status: number, url: string, body?: any) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.body = body;
-    this.url = url;
-  }
-}
 
 const DEFAULT_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 20000);
@@ -201,13 +210,29 @@ function isRetryable(err: any) {
 
 /* ───────────────────────── Request helpers ───────────────────────── */
 export async function request<T = any>(path: string, opts: ReqOpts = {}) {
-  const method = opts.method || "GET";
+  const method = (opts.method || "GET") as Method;
   const payload = opts.json ?? opts.body;
   const hasBody = payload !== undefined && payload !== null;
 
-  const headers: HeadersInit = hasBody
-    ? { "Content-Type": "application/json", ...(opts.headers || {}) }
-    : { ...(opts.headers || {}) };
+  // Build headers (+ auto Idempotency for mutating verbs)
+  const headers: Record<string, string> = {
+    ...(hasBody ? { "Content-Type": "application/json" } : {}),
+    ...((opts.headers as Record<string, string>) || {}),
+  };
+
+  if (method !== "GET" && method !== "DELETE") {
+    const wantIdem =
+      opts.idempotency === false
+        ? null
+        : typeof opts.idempotency === "string"
+        ? opts.idempotency
+        : headers["Idempotency-Key"]
+        ? null
+        : typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+    if (wantIdem) headers["Idempotency-Key"] = wantIdem;
+  }
 
   const url = joinApi(path);
   if (typeof window !== "undefined") console.log("[API]", method, url);
@@ -260,12 +285,29 @@ export async function requestSafe<T = any>(
   | { ok: false; error: string; status: number; body?: any }
 > {
   try {
-    const method = opts.method || "GET";
+    const method = (opts.method || "GET") as Method;
     const payload = opts.json ?? opts.body;
     const hasBody = payload !== undefined && payload !== null;
-    const headers: HeadersInit = hasBody
-      ? { "Content-Type": "application/json", ...(opts.headers || {}) }
-      : { ...(opts.headers || {}) };
+
+    const headers: Record<string, string> = {
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...((opts.headers as Record<string, string>) || {}),
+    };
+
+    if (method !== "GET" && method !== "DELETE") {
+      const wantIdem =
+        opts.idempotency === false
+          ? null
+          : typeof opts.idempotency === "string"
+          ? opts.idempotency
+          : headers["Idempotency-Key"]
+          ? null
+          : typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      if (wantIdem) headers["Idempotency-Key"] = wantIdem;
+    }
+
     const url = joinApi(path);
 
     const exec = async () => {
@@ -348,6 +390,7 @@ function normalizeMe<T extends { user?: any }>(data: T | any) {
 }
 
 export async function meUser() {
+  // Keep canonical: /users/me (server mirrors /auth/me too, but /users/me is primary)
   const raw = await request("/users/me");
   const { user } = normalizeMe(raw);
   return user;
@@ -559,9 +602,11 @@ export const API = {
     virtualCard?: boolean;
   }) => request("/users/me/accounts", { method: "POST", json: payload }),
 
+  // ✅ Authoritative balances from dedicated endpoint
   myAccounts: async () => {
-    const data = await API.me();
-    return (data as any).user?.accounts ?? (data as any).accounts ?? null;
+    const data = await request("/users/me/accounts");
+    // Return either {checking, savings,...} or fallback to nested shape
+    return (data as any)?.accounts ?? data;
   },
 
   achManual: (payload: {
@@ -612,6 +657,10 @@ export const API = {
 
   /* Insights */
   myInsights: () => request("/users/me/insights"),
+
+  /* Prices (fallback route supported by server) */
+  getPrices: (ids = "bitcoin", vs = "usd") =>
+    request(`/prices?ids=${encodeURIComponent(ids)}&vs=${encodeURIComponent(vs)}`),
 
   /* Transfers (direct create) */
   createZelle: (payload: any) =>
@@ -810,9 +859,17 @@ export function afterCreateTransfer(router: any, result: any) {
 }
 
 export async function meBalances() {
-  const data = await API.me();
-  const u: any = (data as any)?.user ?? data;
-  return u?.balances ?? { checking: 0, savings: 0 };
+  // Prefer dedicated endpoint when available, else fall back to /users/me shape
+  try {
+    const acc = await API.myAccounts();
+    const checking = Number(acc?.checking?.available ?? acc?.checking ?? 0) || 0;
+    const savings = Number(acc?.savings?.available ?? acc?.savings ?? 0) || 0;
+    return { checking, savings };
+  } catch {
+    const data = await API.me();
+    const u: any = (data as any)?.user ?? data;
+    return u?.balances ?? { checking: 0, savings: 0 };
+  }
 }
 
 export async function meDisplayName() {
