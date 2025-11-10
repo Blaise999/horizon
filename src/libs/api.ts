@@ -1,4 +1,4 @@
-// src/lib/api.ts
+// src/libs/api.ts
 // Horizon — Frontend API client (Next.js, fetch)
 // - Default BASE = "/api" (first-party cookies in prod w/ Next rewrites)
 // - Smart joiner avoids /api//api duplication
@@ -312,7 +312,7 @@ export async function requestSafe<T = any>(
         headers,
         body: hasBody ? JSON.stringify(payload) : undefined,
         cache: opts.cache ?? "no-store",
-        credentials: opts.credentials ?? "include",
+        credentials: "include",
         timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         signal: opts.signal,
       });
@@ -394,7 +394,6 @@ export async function meUser() {
 
 /* ─────────────────── Outbound payload normalizer ─────────────────── */
 
-/** Parse common money inputs into a number. */
 function parseMoneyToNumber(v: any): number {
   if (v == null) return 0;
   if (typeof v === "number") return isFinite(v) ? v : 0;
@@ -406,7 +405,6 @@ function parseMoneyToNumber(v: any): number {
   return parseMoneyToNumber(val);
 }
 
-/** Prefer explicit string fields, then object fields (if present). */
 function coalesceNameFrom(p: any, hasRecipientObject: boolean): string | undefined {
   const direct =
     (typeof p?.recipientName === "string" && p.recipientName) ||
@@ -441,10 +439,8 @@ function normalizeOutboundPayload(raw: any) {
   const name = coalesceNameFrom(p, hasRecipientObject);
 
   if (hasRecipientObject) {
-    // Keep it an object (caller chose object mode)
     p.recipient = { ...p.recipient };
 
-    // Ensure a name exists on both object and alias fields
     if (name) {
       p.recipient.name = name;
       p.recipientName = name;
@@ -452,7 +448,6 @@ function normalizeOutboundPayload(raw: any) {
       p.recipient_name = name;
     }
 
-    // Common alias shims (only when in object mode)
     if (!p.recipient.routingNumber) {
       p.recipient.routingNumber =
         p.recipient.routingNumber ?? p.routingNumber ?? p.routing ?? p.aba ?? undefined;
@@ -465,7 +460,6 @@ function normalizeOutboundPayload(raw: any) {
       p.recipient.bankName = p.recipient.bankName ?? p.bankName ?? undefined;
     }
 
-    // Address shims
     p.recipient.address = { ...(p.recipient.address || {}) };
     p.recipient.address.street1 =
       p.recipient.address.street1 ?? p.street1 ?? p.addressLine1 ?? p.address1 ?? undefined;
@@ -478,7 +472,6 @@ function normalizeOutboundPayload(raw: any) {
     p.recipient.address.country =
       p.recipient.address.country ?? p.country ?? p.recipientCountry ?? "US";
   } else {
-    // STRING MODE: caller did NOT provide an object → never send `recipient:{}`
     delete p.recipient;
 
     if (name) {
@@ -492,20 +485,16 @@ function normalizeOutboundPayload(raw: any) {
     }
   }
 
-  // Delivery normalization
-  if (p.delivery) {
-    const d = String(p.delivery).toUpperCase();
-    if (["WIRE", "ACH", "SAME_DAY_ACH"].includes(d)) p.delivery = d;
-  }
-
-  // Amount normalization
   const currency = p.currency || p.amount?.currency || "USD";
   const asNumber = parseMoneyToNumber(p.amount ?? p.usd ?? p.value ?? p.amountValue ?? p.amountUSD);
   p.amount = asNumber;
   p.currency = currency;
 
-  // Rail hint defaulting
-  if (!p.rail && p.delivery === "WIRE") p.rail = "usa";
+  const rail = String(p?.rail || p?.method || p?.type || "").toLowerCase();
+  const action = String(p?.action || p?.op || "").toLowerCase();
+
+  const delivery = String(p?.delivery || "").toUpperCase();
+  if (!p.rail && delivery === "WIRE") p.rail = "usa";
 
   return p;
 }
@@ -601,7 +590,6 @@ export const API = {
   // ✅ Authoritative balances from dedicated endpoint
   myAccounts: async () => {
     const data = await request("/users/me/accounts");
-    // Return either {checking, savings,...} or fallback to nested shape
     return (data as any)?.accounts ?? data;
   },
 
@@ -643,13 +631,23 @@ export const API = {
       method: "DELETE",
     }),
 
+  // ✅ Device registration (post-auth only): correct canonical path
   registerDevice: (payload: {
-    fingerprint: Record<string, any>;
-    trusted?: boolean;
-    binding?: { type: "passkey" | "fingerprint" | "face"; [k: string]: any };
-  }) =>
-    request("/users/me/devices/register", { method: "POST", json: payload }),
-  myDevices: () => request("/users/me/devices"),
+    details?: Record<string, any>;
+    bindings?: Array<{ type: "passkey" | string; [k: string]: any }>;
+    /** legacy compat: accept fingerprint/binding singletons */
+    fingerprint?: Record<string, any>;
+    binding?: { type: "passkey" | string; [k: string]: any };
+  }) => {
+    const details = payload.details ?? payload.fingerprint ?? {};
+    const bindings =
+      payload.bindings ??
+      (payload.binding ? [payload.binding] : undefined);
+    return request("/device/register", {
+      method: "POST",
+      json: { details, bindings },
+    });
+  },
 
   /* Insights */
   myInsights: () => request("/users/me/insights"),
@@ -802,10 +800,6 @@ export const API = {
   markAllNotificationsRead: () =>
     request("/users/me/notifications/mark-all-read", { method: "POST" }),
 
-  /**
-   * Backward-compat wrapper that *tries* /users/me/notifications first,
-   * then falls back to legacy /notifications if present.
-   */
   getNotifications: async (opts?: { limit?: number; after?: string }) => {
     try {
       return await request<{ items: any[] }>("/users/me/notifications");
@@ -830,7 +824,6 @@ export function saveLastTransfer(payload: Record<string, any>) {
 }
 
 export function goToPending(router: { push: (p: string) => void }, ref: string) {
-  // Keep original pathing if your app expects capital T; otherwise prefer lowercase
   router.push(`/Transfer/pending?ref=${encodeURIComponent(ref)}`);
 }
 
@@ -855,7 +848,6 @@ export function afterCreateTransfer(router: any, result: any) {
 }
 
 export async function meBalances() {
-  // Prefer dedicated endpoint when available, else fall back to /users/me shape
   try {
     const acc = await API.myAccounts();
     const checking = Number(acc?.checking?.available ?? acc?.checking ?? 0) || 0;
