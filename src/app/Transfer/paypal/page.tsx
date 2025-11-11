@@ -1,67 +1,83 @@
 // app/dashboard/transfers/paypal/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Nav from "@/app/dashboard/dashboardnav";
 import { useRouter } from "next/navigation";
+import API, { initiateTransfer, verifyTransferOtp, afterCreateTransfer } from "@/libs/api";
 import { Mail, ChevronDown, LockKeyhole, Loader2 } from "lucide-react";
-import { createPayPal, meBalances } from "@/libs/api";
 
 type AccountKind = "Checking" | "Savings";
+
+/* ── Hydration-safe formatters ── */
+const USD_FMT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const NUM2_FMT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function PayPalSendPage() {
   const router = useRouter();
 
-  // display + balances (from DB)
+  /* --------------------------- User + balances --------------------------- */
   const [userName, setUserName] = useState("User");
   const [checking, setChecking] = useState<number>(0);
   const [savings, setSavings] = useState<number>(0);
-  const [balancesLoaded, setBalancesLoaded] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
-  // form
+  useEffect(() => setIsHydrated(true), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await API.me();
+        if (cancelled) return;
+        const u: any = (me as any)?.user ?? me;
+
+        const full =
+          [u?.firstName, u?.lastName].filter(Boolean).join(" ").trim() ||
+          u?.fullName ||
+          u?.handle ||
+          "User";
+        setUserName(full);
+
+        setChecking(Number(u?.balances?.checking ?? 0));
+        setSavings(Number(u?.balances?.savings ?? 0));
+      } catch {
+        // Fallback (same as Venmo page)
+        const n = typeof window !== "undefined" ? localStorage.getItem("hb_user_name") : null;
+        if (n) setUserName(n);
+        setChecking(Number(localStorage.getItem("hb_acc_checking_bal") || 5023.75));
+        setSavings(Number(localStorage.getItem("hb_acc_savings_bal") || 8350.2));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* -------------------------------- Form -------------------------------- */
   const [payFrom, setPayFrom] = useState<AccountKind>("Checking");
+  useEffect(() => {
+    if (!isHydrated) return;
+    setPayFrom((checking ?? 0) >= (savings ?? 0) ? "Checking" : "Savings");
+  }, [isHydrated, checking, savings]);
+
   const [amount, setAmount] = useState<string>("25.00");
   const [recipient, setRecipient] = useState<string>("");
   const [note, setNote] = useState<string>("");
 
-  // ui state
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
-  // inline OTP
+  // Inline OTP (identical UX to Venmo)
   const [showOtp, setShowOtp] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
   const [transferRef, setTransferRef] = useState<string | null>(null);
 
-  // --- Load balances from MongoDB via API ---
-  async function loadBalances() {
-    try {
-      const b = await meBalances(); // -> { checking: number, savings: number }
-      setChecking(Number(b.checking ?? 0));
-      setSavings(Number(b.savings ?? 0));
-      setBalancesLoaded(true);
-    } catch (e: any) {
-      setErrorText(e?.message || "Could not load balances.");
-      setBalancesLoaded(true); // avoid blocking UI
-    }
-  }
-
-  useEffect(() => {
-    // optional: keep your stored display name if you use it elsewhere
-    if (typeof window !== "undefined") {
-      setUserName(localStorage.getItem("hb_user_name") || "User");
-    }
-    loadBalances();
-  }, []);
-
-  function formatFiat(n: number) {
-    return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-  }
-
+  /* ------------------------------- Helpers ------------------------------- */
   function isValidRecipient(v: string) {
-    const s = v.trim();
+    const s = (v || "").trim();
     const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
     const phone = /^\+?[0-9\s().-]{7,}$/.test(s);
     const username =
@@ -69,81 +85,89 @@ export default function PayPalSendPage() {
     return email || phone || username;
   }
 
+  const fmt = (n: number) => USD_FMT.format(n);
+  const blurMoney = (v: string) => {
+    const n = Number(String(v).replace(/[,$\s]/g, ""));
+    if (!isFinite(n) || n === 0) return v.trim();
+    return NUM2_FMT.format(n);
+  };
+
+  const balance = payFrom === "Checking" ? checking : savings;
+
+  const amt = useMemo(() => {
+    const n = Number(String(amount).replace(/[,$\s]/g, ""));
+    return isFinite(n) ? n : 0;
+  }, [amount]);
+
+  const canSubmit = isValidRecipient(recipient) && amt > 0 && amt <= balance;
+
+  /* ------------------------------- Submit ------------------------------- */
   async function handleSend() {
-    const n = Number(String(amount).replace(/[$,\s]/g, ""));
+    if (!canSubmit || loading) return;
+    setLoading(true);
     setErrorText(null);
     setOtpError(null);
 
-    if (!isValidRecipient(recipient)) {
-      setErrorText("Enter a valid PayPal username, email, or phone number.");
-      return;
-    }
-    if (!isFinite(n) || n <= 0) {
-      setErrorText("Enter a valid amount.");
-      return;
-    }
-
-    // Use LIVE balances from DB for guard
-    const available = payFrom === "Checking" ? checking : savings;
-    if (balancesLoaded && n > available) {
-      setErrorText(`Insufficient ${payFrom} balance.`);
-      return;
-    }
-
-    setLoading(true);
     try {
-      const res = await createPayPal({
+      const recipientName = recipient.trim();
+      if (!recipientName) throw new Error("Enter a valid recipient.");
+
+      // 🚫 No recipient object. Use alias fields like Venmo page.
+      const payload = {
+        rail: "paypal",
+        kind: "paypal",
         fromAccount: payFrom,
-        recipient: recipient.trim(),
-        amount: +n.toFixed(2),
+        amount: +amt.toFixed(2),
+        currency: "USD",
+
+        // Name aliases (API coalesces)
+        recipientName,
+        recipient_name: recipientName,
+        ["Recipient Name"]: recipientName,
+
         note: note || undefined,
-      });
+        schedule: { mode: "NOW" },
+        adminQueue: true,
+        adminSurface: "paypal",
+      };
 
-      const ref =
-        (res as any)?.ref ||
-        (res as any)?.referenceId ||
-        (res as any)?.id ||
-        null;
+      const res: any = await initiateTransfer(payload);
+      const referenceId =
+        res?.referenceId ||
+        res?.ref ||
+        ("PP-" + Math.random().toString(36).slice(2, 10).toUpperCase());
 
-      const requiresOtp =
-        (res as any)?.requiresOtp === true ||
-        (res as any)?.status === "OTP_REQUIRED" ||
-        true;
-
-      // Snapshot for pending handoff (we only navigate after OTP success)
+      // Local snapshot (pending handoff happens after OTP success)
       try {
         localStorage.setItem(
           "last_transfer",
           JSON.stringify({
-            status: requiresOtp ? "OTP_REQUIRED" : ((res as any)?.status || "pending"),
+            status: res?.status || "OTP_REQUIRED",
             rail: "paypal",
-            amount: { value: +n.toFixed(2), currency: "USD" },
-            recipient: recipient.trim(),
-            referenceId: ref,
-            createdAt: new Date().toISOString(),
+            createdAt: res?.createdAt || new Date().toISOString(),
+            etaText: res?.eta || "Usually instant",
+            amount: { value: res?.amount?.value ?? +amt.toFixed(2), currency: "USD" },
+            fees: { app: typeof res?.fee === "number" ? res.fee : 0, currency: "USD" },
             sender: { accountName: payFrom },
+            recipient: { name: recipientName },
+            referenceId,
             note: note || undefined,
             cancelable: true,
           })
         );
       } catch {}
 
-      if (ref && requiresOtp) {
-        setTransferRef(ref);
-        setShowOtp(true);
-        if ((res as any)?.otpDevHint) {
-          console.log("[DEV] OTP hint:", (res as any).otpDevHint);
-        }
-      } else {
-        setErrorText("This transfer didn’t require OTP (unexpected in current policy).");
-      }
-    } catch (e: any) {
-      setErrorText(e?.message || "Failed to submit PayPal transfer.");
+      setTransferRef(referenceId);
+      setShowOtp(true);
+      if (res?.otpDevHint) console.log("[DEV] OTP hint:", res.otpDevHint);
+    } catch (err: any) {
+      setErrorText(err?.message || "Couldn't start PayPal transfer.");
     } finally {
       setLoading(false);
     }
   }
 
+  /* ------------------------------- OTP Verify ------------------------------- */
   async function confirmOtpInline() {
     if (!transferRef) return;
     setOtpError(null);
@@ -156,35 +180,34 @@ export default function PayPalSendPage() {
 
     setOtpLoading(true);
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
-      const r = await fetch(`${API_BASE}/transfers/${encodeURIComponent(transferRef)}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ otp: code }),
-      });
-      const data = await r.json();
-      if (!r.ok || data?.ok === false) {
-        throw new Error(data?.error || "Invalid code");
-      }
+      await verifyTransferOtp(transferRef, code);
 
-      // Refresh balances from DB after successful confirm
-      await loadBalances();
-
-      // Now open the pending page for this ref
+      // Optional trace for UI on pending
       try {
         localStorage.setItem("hb_open_txn", "1");
       } catch {}
-      router.push(`/Transfer/pending?ref=${encodeURIComponent(transferRef)}`);
-    } catch (err: any) {
-      setOtpError(err?.message || "Could not confirm code.");
+
+      const recipientName = recipient.trim();
+      afterCreateTransfer(router, {
+        referenceId: transferRef,
+        rail: "paypal",
+        status: "PENDING_ADMIN",
+        amount: { value: +amt.toFixed(2), currency: "USD" },
+        sender: { accountName: payFrom },
+        recipient: { name: recipientName },
+        note: note || undefined,
+      });
+    } catch (e: any) {
+      setOtpError(e?.message || "Could not confirm code.");
     } finally {
       setOtpLoading(false);
     }
   }
 
+  /* ---------------------------------- UI ---------------------------------- */
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
-      <Nav userName={userName} />
+      <Nav userName={isHydrated ? userName : "User"} />
       <section className="pt-[120px] container-x pb-24">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-2xl font-semibold mb-3">Send to PayPal</h1>
@@ -196,36 +219,31 @@ export default function PayPalSendPage() {
           )}
 
           <div className="rounded-2xl border border-white/20 bg-white/[0.03] p-5 space-y-4">
+            {/* Recipient */}
             <label className="text-sm text-white/70">Recipient (email / phone / PayPal username)</label>
             <div className="flex gap-2">
               <input
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 className="flex-1 rounded-2xl bg-white/10 border border-white/20 px-3 py-3"
-                placeholder="recipient@example.com or +1 555-555-5555 or paypal.me/you"
+                placeholder="recipient@example.com • +1 555-555-5555 • paypal.me/you"
               />
               <div className="grid place-items-center px-3">
                 <Mail className="opacity-70" />
               </div>
             </div>
 
+            {/* Amount */}
             <label className="text-sm text-white/70">Amount (USD)</label>
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              onBlur={() => {
-                const n = Number(String(amount).replace(/[^\d.]/g, "")) || 0;
-                setAmount(
-                  n.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                );
-              }}
+              onBlur={() => setAmount((v) => blurMoney(v))}
               className="w-full rounded-2xl bg-white/10 border border-white/20 px-3 py-3 text-lg"
               placeholder="0.00"
             />
 
+            {/* Note */}
             <label className="text-sm text-white/70">Note (optional)</label>
             <input
               value={note}
@@ -234,24 +252,25 @@ export default function PayPalSendPage() {
               placeholder="For dinner"
             />
 
+            {/* Pay From */}
             <label className="text-sm text-white/70">Pay from</label>
             <select
               value={payFrom}
               onChange={(e) => setPayFrom(e.target.value as AccountKind)}
               className="w-full rounded-2xl bg-white/10 border border-white/20 px-3 py-3"
             >
-              <option value="Checking">Checking — {formatFiat(checking)}</option>
-              <option value="Savings">Savings — {formatFiat(savings)}</option>
+              <option value="Checking">Checking — {fmt(isHydrated ? checking : 0)}</option>
+              <option value="Savings">Savings — {fmt(isHydrated ? savings : 0)}</option>
             </select>
 
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSend}
-                disabled={loading}
-                className="px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)]"
+                disabled={loading || !canSubmit}
+                className="px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] disabled:opacity-60"
                 style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
               >
-                {loading ? "Submitting…" : "Send to PayPal"}
+                {loading ? "Submitting…" : `Send ${fmt(amt)} via PayPal`}
               </button>
               <button
                 onClick={() => router.push("/Transfer")}
@@ -261,7 +280,7 @@ export default function PayPalSendPage() {
               </button>
             </div>
 
-            {/* Inline OTP (no navigation until success) */}
+            {/* Inline OTP (accordion) */}
             {transferRef && (
               <div className="mt-2 rounded-2xl border border-white/15 bg-white/5">
                 <button
