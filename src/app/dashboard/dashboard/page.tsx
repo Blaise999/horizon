@@ -3,6 +3,7 @@
 // - Deep fallbacks for name/handle/bank last4, incl. provider meta blocks
 // - Provider names never appear as bold title; they live in subtitle only
 // - Real 30d stats, YTD, cleaner UI
+// - Avatar upload: Cloudinary unsigned → save to /users/me/profile → live preview (+ optional nav refresh event)
 
 "use client";
 
@@ -39,9 +40,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
+  Loader2, // ⬅ spinner for avatar upload
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import API, { request } from "@/libs/api";
+import API, { request, uploadAvatarUnsigned, saveAvatar } from "@/libs/api";
 import { useLiveCrypto } from "@/libs/useLiveCrypto";
 
 /* -------------------------------------------------------------------------- */
@@ -475,6 +477,10 @@ export default function DashboardPage() {
   const [activities, setActivities] = useState<any[]>([]);
   const [focusMonth, setFocusMonth] = useState<Date>(new Date());
 
+  // Avatar UX flags
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
   const openQuickAddMoney = () => router.push("/Transfer/add");
   const openQuickTransfer = () => router.push("/Transfer/transfermethod");
   const openPayBills = () => router.push("/Transfer/paybill");
@@ -602,15 +608,56 @@ export default function DashboardPage() {
   function handlePickAvatar() {
     fileInputRef.current?.click();
   }
-  function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
+
+  // ⬇ REPLACED: local FileReader preview → Cloudinary unsigned upload + save
+  async function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setProfileAvatar(String(reader.result));
-    reader.readAsDataURL(file);
+    setAvatarError(null);
+    setAvatarUploading(true);
+    try {
+      // Upload to Cloudinary (unsigned preset from env)
+      const url = await uploadAvatarUnsigned(file, { folder: "horizon/avatars" });
+      // Persist on backend
+      await saveAvatar(url); // PATCH /users/me/profile { avatarUrl: url }
+      // Update UI
+      setProfileAvatar(url);
+      // Optional: let the Nav (or any listener) know immediately
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("horizon:profile-updated", { detail: { avatarUrl: url } }));
+        try {
+          localStorage.setItem("horizon_avatar_url", url);
+        } catch {}
+      }
+    } catch (err: any) {
+      console.error("avatar upload failed", err);
+      setAvatarError(err?.message || "Failed to upload avatar.");
+    } finally {
+      setAvatarUploading(false);
+      // clear input so selecting the same file again re-triggers change
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
-  function handleAvatarRemove() {
-    setProfileAvatar(null);
+
+  async function handleAvatarRemove() {
+    setAvatarError(null);
+    setAvatarUploading(true);
+    try {
+      // Clear on backend (empty string is fine; backend can interpret as unset)
+      await API.updateProfile({ avatarUrl: "" });
+      setProfileAvatar(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("horizon:profile-updated", { detail: { avatarUrl: "" } }));
+        try {
+          localStorage.removeItem("horizon_avatar_url");
+        } catch {}
+      }
+    } catch (err: any) {
+      console.error("remove avatar failed", err);
+      setAvatarError(err?.message || "Failed to remove photo.");
+    } finally {
+      setAvatarUploading(false);
+    }
   }
 
   async function handleSaveSettings(e: React.FormEvent) {
@@ -620,6 +667,7 @@ export default function DashboardPage() {
         firstName: profileFirst,
         lastName: profileLast,
         address: { street1: profileAddress },
+        // avatarUrl already saved during upload, but keep it in sync if present:
         avatarUrl: profileAvatar || undefined,
       });
       await API.updatePreferences({
@@ -654,6 +702,7 @@ export default function DashboardPage() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenSupport={() => setShowSettings(true)}
         onOpenProfile={() => setShowSettings(true)}
+        {...({ avatarUrl: profileAvatar || undefined } as any)} // if Nav supports it, it updates immediately
       />
 
       {/* Hero / balances */}
@@ -750,7 +799,7 @@ export default function DashboardPage() {
               </div>
               <button
                 onClick={nextMonth}
-                className="px-3 py-2 rounded-xl bg白/10 border border-white/20"
+                className="px-3 py-2 rounded-xl bg-white/10 border border-white/20"
                 title="Next month"
               >
                 ›
@@ -905,14 +954,17 @@ export default function DashboardPage() {
                     <User size={28} className="text-white/70" />
                   )}
                 </div>
+
+                {/* Upload button / spinner */}
                 <button
-                  onClick={handlePickAvatar}
+                  onClick={avatarUploading ? undefined : handlePickAvatar}
                   className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
-                  title="Change photo"
+                  title={avatarUploading ? "Uploading…" : "Change photo"}
                 >
-                  <Camera size={18} />
+                  {avatarUploading ? <Loader2 className="animate-spin" size={18} /> : <Camera size={18} />}
                 </button>
               </div>
+
               <div className="text-base">
                 <div className="font-semibold">
                   {profileFirst || "—"} {profileLast}
@@ -931,10 +983,14 @@ export default function DashboardPage() {
             {profileAvatar && (
               <button
                 onClick={handleAvatarRemove}
-                className="mt-4 inline-flex items-center gap-3 text-sm text-rose-300 hover:underline transition-all"
+                className="mt-4 inline-flex items-center gap-3 text-sm text-rose-300 hover:underline transition-all disabled:opacity-60"
+                disabled={avatarUploading}
               >
                 <Trash2 size={16} /> Remove photo
               </button>
+            )}
+            {avatarError && (
+              <div className="mt-3 text-sm text-rose-300">{avatarError}</div>
             )}
 
             <div className="h-px bg-white/20 my-5" />

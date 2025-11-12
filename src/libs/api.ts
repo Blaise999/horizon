@@ -1,4 +1,4 @@
-// src/lib/api.ts
+// src/libs/api.ts
 // Horizon — Frontend API client (Next.js, fetch)
 // - Default BASE = "/api" (first-party cookies in prod w/ Next rewrites)
 // - Smart joiner avoids /api//api duplication
@@ -448,7 +448,7 @@ function normalizeOutboundPayload(raw: any) {
     if (name) {
       p.recipient.name = name;
       p.recipientName = name;
-      p["Recipient Name"] = name;
+      (p as any)["Recipient Name"] = name;
       p.recipient_name = name;
     }
 
@@ -483,11 +483,11 @@ function normalizeOutboundPayload(raw: any) {
 
     if (name) {
       p.recipientName = name;
-      p["Recipient Name"] = name;
+      (p as any)["Recipient Name"] = name;
       p.recipient_name = name;
     } else {
       delete p.recipientName;
-      delete p["Recipient Name"];
+      delete (p as any)["Recipient Name"];
       delete p.recipient_name;
     }
   }
@@ -535,12 +535,66 @@ function resolveTransferEndpoint(p: any): string {
     if (action === "buy") return "/transfer/crypto/buy";
     if (action === "swap") return "/transfer/crypto/swap";
     if (action === "send") return "/transfer/crypto/send";
-  }
+    }
 
   const delivery = String(p?.delivery || "").toUpperCase();
   if (["WIRE", "ACH", "SAME_DAY_ACH"].includes(delivery)) return "/transfer/usa";
 
   return "/transfer/usa";
+}
+
+/* ─────────────── Avatar helpers (Cloudinary unsigned) ─────────────── */
+/**
+ * Upload a File directly to Cloudinary using an **unsigned** preset.
+ * Returns the secure URL. No cookies/credentials required.
+ */
+export async function uploadAvatarUnsigned(
+  file: File,
+  opts?: { folder?: string; transformation?: string }
+): Promise<string> {
+  const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD;
+  const preset = process.env.NEXT_PUBLIC_CLOUDINARY_PRESET;
+
+  if (!cloud || !preset) {
+    throw new ApiError(
+      "Cloudinary env not set (NEXT_PUBLIC_CLOUDINARY_CLOUD / NEXT_PUBLIC_CLOUDINARY_PRESET).",
+      0,
+      "cloudinary"
+    );
+  }
+  if (!(file instanceof File)) {
+    throw new ApiError("uploadAvatarUnsigned: expected a File", 0, "cloudinary");
+  }
+  if (!/^image\//.test(file.type)) {
+    throw new ApiError("Please upload an image file (png/jpg/webp).", 0, "cloudinary");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new ApiError("Max avatar size is 5MB.", 0, "cloudinary");
+  }
+
+  const endpoint = `https://api.cloudinary.com/v1_1/${cloud}/image/upload`;
+  const fd = new FormData();
+  fd.set("file", file);
+  fd.set("upload_preset", preset);
+  if (opts?.folder) fd.set("folder", opts.folder);
+  if (opts?.transformation) fd.set("transformation", opts.transformation);
+  // You can also rely on the preset’s incoming transformation:
+  // e.g., c_fill,g_face,w_256,h_256,q_auto,f_auto
+
+  const res = await fetch(endpoint, { method: "POST", body: fd });
+  const json = await res.json().catch(() => null as any);
+
+  if (!res.ok) {
+    const msg =
+      json?.error?.message ||
+      json?.message ||
+      `Cloudinary upload failed (${res.status})`;
+    throw new ApiError(msg, res.status, endpoint, json);
+  }
+
+  const url = json?.secure_url || json?.url;
+  if (!url) throw new ApiError("Upload succeeded but no URL returned.", res.status, endpoint, json);
+  return String(url);
 }
 
 /* ─────────────────────────────── API ─────────────────────────────── */
@@ -588,6 +642,10 @@ export const API = {
     };
     avatarUrl?: string;
   }) => request("/users/me/profile", { method: "PATCH", json: payload }),
+
+  /** Minimal helper for avatars: stores the URL on the profile. */
+  saveAvatar: (url: string) =>
+    request("/users/me/profile", { method: "PATCH", json: { avatarUrl: url } }),
 
   saveSecurity: (payload: { pin?: string; passkey?: boolean }) =>
     request("/users/me/security", { method: "POST", json: payload }),
@@ -723,7 +781,7 @@ export const API = {
 
     const nameStr =
       (typeof normalized.recipientName === "string" && normalized.recipientName.trim()) ||
-      (typeof normalized["Recipient Name"] === "string" && normalized["Recipient Name"].trim()) ||
+      (typeof normalized["Recipient Name"] === "string" && (normalized as any)["Recipient Name"].trim()) ||
       (typeof normalized.recipient_name === "string" && normalized.recipient_name.trim()) ||
       (normalized.recipient &&
         typeof normalized.recipient === "object" &&
@@ -915,5 +973,9 @@ export const adminListNotifications = API.adminListNotifications;
 export const adminCreateNotification = API.adminCreateNotification;
 export const adminUpdateNotification = API.adminUpdateNotification;
 export const adminDeleteNotification = API.adminDeleteNotification;
+
+/* avatar convenience exports */
+export const saveAvatar = API.saveAvatar;
+
 
 export default API;

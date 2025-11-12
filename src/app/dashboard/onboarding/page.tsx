@@ -41,6 +41,8 @@ import {
   LayoutGrid,
   Bitcoin,
   Landmark,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import { registerThisDevice } from "@/libs/fp";
 
@@ -81,6 +83,45 @@ async function req<T = any>(
   } catch {}
   if (!res.ok) throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
   return data as T;
+}
+
+/* ------------------------- Avatar upload (Cloudinary) ------------------------- */
+/**
+ * Frontend direct upload to Cloudinary (unsigned preset).
+ * Ensure these envs are set on your frontend (Vercel):
+ *  - NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+ *  - NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET  (unsigned)
+ *  - NEXT_PUBLIC_CLOUDINARY_AVATAR_FOLDER  (optional, e.g. "horizon/avatars")
+ */
+const CLD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME as string | undefined;
+const CLD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET as string | undefined; // unsigned
+const CLD_FOLDER =
+  (process.env.NEXT_PUBLIC_CLOUDINARY_AVATAR_FOLDER as string | undefined) || "horizon/avatars";
+
+async function uploadAvatarToCloudinary(file: File): Promise<string> {
+  if (!file) throw new Error("No file selected.");
+  if (!CLD_NAME || !CLD_PRESET) {
+    throw new Error("Cloudinary not configured: set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET.");
+  }
+  if (!/^image\//.test(file.type)) throw new Error("Please select an image file.");
+  const MAX_MB = 8;
+  if (file.size > MAX_MB * 1024 * 1024) throw new Error(`Image too large. Max ${MAX_MB}MB.`);
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", CLD_PRESET);
+  fd.append("folder", CLD_FOLDER);
+
+  // Optionally apply simple transformation (center crop to square, limit size)
+  // fd.append("transformation", JSON.stringify({ width: 512, height: 512, crop: "fill", gravity: "auto" }));
+
+  const up = await fetch(`https://api.cloudinary.com/v1_1/${CLD_NAME}/image/upload`, { method: "POST", body: fd });
+  if (!up.ok) {
+    const t = await up.text().catch(() => "");
+    throw new Error(t || "Avatar upload failed.");
+  }
+  const json = await up.json();
+  return json.secure_url as string;
 }
 
 /* --------------------------------- Page ---------------------------------- */
@@ -141,7 +182,9 @@ export default function OnboardingPage() {
   const [lastName, setLastName] = useState("");
   const [address, setAddress] = useState("");
   const [dob, setDob] = useState("");
-  const [profilePic, setProfilePic] = useState("");
+  const [profilePic, setProfilePic] = useState("");        // ← stores the FINAL Cloudinary URL
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
   const [phone, setPhone] = useState("");
   const [handle, setHandle] = useState("");
 
@@ -178,35 +221,35 @@ export default function OnboardingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const me = await req<{
-          id: string;
-          firstName?: string;
-          lastName?: string;
-          address?:
-            | { street1?: string; city?: string; state?: string; postalCode?: string; country?: string }
-            | string;
-          dob?: string;
-          passkeyEnabled?: boolean;
-          hasPin?: boolean;
-          onboardingStatus?: string;
-          setupPercent?: number;
+        type MeRes = {
+          ok: boolean;
+          user?: {
+            id?: string;
+            firstName?: string;
+            lastName?: string;
+            address?:
+              | { street1?: string; city?: string; state?: string; postalCode?: string; country?: string }
+              | string;
+            dob?: string;
+            passkeyEnabled?: boolean;
+            hasPin?: boolean;
+            onboardingStatus?: string;
+            setupPercent?: number;
+            phone?: string;
+            handle?: string;
+            avatarUrl?: string | null;
+            accounts?: { accountNumber?: string; routingNumber?: string; cardNumber?: string } | null;
+            ach?: { status: AchStatus; bankName?: string; mask?: string; holder?: string } | null;
+            preferences?: { timezone?: string; currency?: string; notifyEmail?: boolean; notifyPush?: boolean } | null;
+          };
+          // mirrors the BE's top-level mirrors:
           accounts?: { accountNumber?: string; routingNumber?: string; cardNumber?: string } | null;
-          ach?: {
-            status: AchStatus;
-            bankName?: string;
-            mask?: string;
-            holder?: string;
-          } | null;
-          preferences?: {
-            timezone?: string;
-            currency?: string;
-            notifyEmail?: boolean;
-            notifyPush?: boolean;
-          } | null;
-          phone?: string;
-          handle?: string;
-        }>("/users/me");
+          ach?: { status: AchStatus; bankName?: string; mask?: string; holder?: string } | null;
+          preferences?: { timezone?: string; currency?: string; notifyEmail?: boolean; notifyPush?: boolean } | null;
+        };
 
+        const res = await req<MeRes>("/users/me");
+        const me = res.user || ({} as NonNullable<MeRes["user"]>);
         setAuthed(true);
 
         // Security flags
@@ -225,36 +268,40 @@ export default function OnboardingPage() {
         }
         if (me?.phone) setPhone(me.phone);
         if (me?.handle) setHandle(me.handle);
+        if (me?.avatarUrl) setProfilePic(me.avatarUrl);
 
-        // Accounts snapshot
-        if (me?.accounts) {
-          if (me.accounts.accountNumber) {
-            setAccountNumber(me.accounts.accountNumber);
+        // Accounts snapshot (prefer top-level mirrors if present)
+        const acc = res.accounts || me.accounts;
+        if (acc) {
+          if (acc.accountNumber) {
+            setAccountNumber(acc.accountNumber);
             setHasChecking(true);
           }
-          if (me.accounts.cardNumber) {
-            setCardNumber(me.accounts.cardNumber);
+          if (acc.cardNumber) {
+            setCardNumber(acc.cardNumber);
             setHasVirtualCard(true);
           }
-          if (me.accounts.routingNumber) {
-            setRoutingNumber(me.accounts.routingNumber);
+          if (acc.routingNumber) {
+            setRoutingNumber(acc.routingNumber);
           }
         }
 
         // ACH
-        if (me?.ach) {
-          setAchStatus(me.ach.status || "none");
-          setAchBankName(me.ach.bankName || "");
-          setAchMask(me.ach.mask || "");
-          setAchHolder(me.ach.holder || "");
+        const ach = res.ach || me.ach;
+        if (ach) {
+          setAchStatus(ach.status || "none");
+          setAchBankName(ach.bankName || "");
+          setAchMask(ach.mask || "");
+          setAchHolder(ach.holder || "");
         }
 
         // Preferences
-        if (me?.preferences) {
-          if (me.preferences.timezone) setTimezone(me.preferences.timezone);
-          if (me.preferences.currency) setCurrency(me.preferences.currency);
-          if (me.preferences.notifyEmail != null) setNotifyEmail(!!me.preferences.notifyEmail);
-          if (me.preferences.notifyPush != null) setNotifyPush(!!me.preferences.notifyPush);
+        const prefs = res.preferences || me.preferences;
+        if (prefs) {
+          if (prefs.timezone) setTimezone(prefs.timezone);
+          if (prefs.currency) setCurrency(prefs.currency);
+          if (prefs.notifyEmail != null) setNotifyEmail(!!prefs.notifyEmail);
+          if (prefs.notifyPush != null) setNotifyPush(!!prefs.notifyPush);
         }
       } catch {
         // First-time onboarding: no session yet → stay on page in pre-auth mode
@@ -326,7 +373,7 @@ export default function OnboardingPage() {
             lastName: lastName?.trim(),
             address: { street1: address?.trim() }, // single-line -> server stores AddressSchema
             dob: dob ? new Date(dob).toISOString() : undefined,
-            avatarUrl: profilePic || undefined,
+            avatarUrl: profilePic || undefined,    // ← ensure the Cloudinary URL is sent
             phone: phone?.trim() || undefined,
             handle: (handle || "").replace(/^@/, "").trim() || undefined,
           },
@@ -379,7 +426,6 @@ export default function OnboardingPage() {
   const complete = async () => {
     try {
       await reqA("/users/me/onboarding/complete", { method: "POST" }).catch(() => {});
-      setAuthed(true);
     } finally {
       router.replace("/dashboard/dashboard");
     }
@@ -418,6 +464,27 @@ export default function OnboardingPage() {
     if (nextState.bankName !== undefined) setAchBankName(nextState.bankName);
     if (nextState.mask !== undefined) setAchMask(nextState.mask);
     if (nextState.holder !== undefined) setAchHolder(nextState.holder);
+  }
+
+  // ------------------------ Avatar handlers ------------------------
+  async function onAvatarPick(file?: File) {
+    if (!file) return;
+    setAvatarError("");
+    setAvatarUploading(true);
+    try {
+      const url = await uploadAvatarToCloudinary(file); // ← uploads & returns secure URL
+      setProfilePic(url);
+
+      // Persist immediately so Settings/Profile always shows latest
+      await reqA("/users/me/profile", {
+        method: "PATCH",
+        body: { avatarUrl: url },
+      }).catch(() => {});
+    } catch (e: any) {
+      setAvatarError(e?.message || "Upload failed.");
+    } finally {
+      setAvatarUploading(false);
+    }
   }
 
   return (
@@ -504,25 +571,33 @@ export default function OnboardingPage() {
             <Panel title="Profile & ID" subtitle="Upload your picture and fill in personal details.">
               <div className="grid sm:grid-cols-2 gap-6">
                 <Field label="Profile photo">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const url = URL.createObjectURL(file);
-                      setProfilePic(url);
-                    }}
-                  />
-                  {profilePic && (
-                    // eslint-disable-next-line @next/next/no-img-element
+                  <div className="mt-2 flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={profilePic}
-                      alt="preview"
-                      className="mt-3 w-24 h-24 rounded-xl object-cover border border-white/10"
+                      src={profilePic || "/avatar-placeholder.png"}
+                      alt="avatar"
+                      className="w-16 h-16 rounded-xl object-cover border border-white/10"
                     />
+                    <label className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-xl bg-white/10 border border-white/20 cursor-pointer">
+                      <ImageIcon size={16} />
+                      <span>{avatarUploading ? "Uploading..." : "Change photo"}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => onAvatarPick(e.target.files?.[0])}
+                        disabled={avatarUploading}
+                      />
+                    </label>
+                  </div>
+                  {avatarUploading && (
+                    <div className="mt-2 text-xs text-white/70 inline-flex items-center gap-2">
+                      <Loader2 className="animate-spin" size={14} /> Uploading to Cloud…
+                    </div>
                   )}
+                  {avatarError && <p className="text-xs text-rose-300 mt-1">{avatarError}</p>}
                 </Field>
+
                 <Field label="First name">
                   <input
                     value={firstName}
@@ -861,7 +936,6 @@ function ManualAchCard({
   }
 
   async function resendDeposits() {
-    // Optional UX hint; server can re-initiate micro-deposits (noop in demo)
     await fetch(`${API_BASE}${base}/manual`, {
       method: "POST",
       credentials: "include",
