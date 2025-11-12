@@ -227,6 +227,28 @@ export default function WireTransferPage() {
     setShowReview(true);
   }
 
+  // Map common country names to ISO-2 for backend
+  const iso2 = (name: string) => {
+    const m: Record<string, string> = {
+      "United States": "US",
+      "United Kingdom": "GB",
+      "England": "GB",
+      "Wales": "GB",
+      "Scotland": "GB",
+      "Northern Ireland": "GB",
+      "Germany": "DE",
+      "France": "FR",
+      "Canada": "CA",
+      "Australia": "AU",
+      "Japan": "JP",
+      "Switzerland": "CH",
+      "Nigeria": "NG",
+      "South Africa": "ZA",
+    };
+    if (!name) return "";
+    return (m[name.trim()] || name.trim().slice(0, 2)).toUpperCase();
+  };
+
   /* -------------------------------- Submit flow ------------------------------- */
   async function submitWire() {
     if (!canReview || submitting) return;
@@ -236,84 +258,156 @@ export default function WireTransferPage() {
     try {
       const isDomestic = wireType === "DOMESTIC";
 
-      // ✅ Backend wants: amount: number (dollars). Keep currency separately.
-      const payload: any = {
-        rail: isDomestic ? "usa" : "international",
-        delivery: "WIRE",
-        fromAccount,
-        amount: +parsedAmount.toFixed(2), // number only
-        currency,
+      // Normalize currencies
+      const sendCur = String(currency).toUpperCase();
+      const recvCur = sendCur; // adjust later if you add FX selection
 
-        // Recipient block (shown as "Beneficiary" in UI)
-        recipient: {
-          name: beneficiaryName, // UI label is "Beneficiary name"
-          email: beneficiaryEmail,
-          address: { street1: beneficiaryAddress },
-          bankName,
-          bankAddress,
-          routingNumber: isDomestic ? routingNumber : undefined,
-          accountNumber: isDomestic ? accountNumber : undefined,
-          country: !isDomestic ? bankCountry : undefined,
-          swift: !isDomestic ? swiftBic : undefined,
-          iban: !isDomestic ? ibanOrAcct : undefined,
-          intermediary:
-            !isDomestic && useIntermediary
-              ? { name: interName || undefined, swift: interSwift || undefined, account: interAcct || undefined }
-              : undefined,
+      let payload: any;
 
-          // extra alias inside recipient
-          recipientName: beneficiaryName,
-        },
+      if (isDomestic) {
+        // Keep domestic flow as-is (you can adapt to your US handler as needed)
+        payload = {
+          rail: "usa",
+          delivery: "WIRE",
+          fromAccount,
+          amount: +parsedAmount.toFixed(2), // number (major units)
+          currency: sendCur,
 
-        // 🔁 Top-level aliases to satisfy strict validators / USA handler
-        recipientName: beneficiaryName,                   // name
-        recipient_name: beneficiaryName,
-        ["Recipient Name"]: beneficiaryName,
-        recipientEmail: beneficiaryEmail,                 // email (top-level)
-        bankName,                                         // bankName (top-level)
-        bankAddress,                                      // bankAddress (top-level)
-        recipientAcctType: isDomestic ? beneficiaryAcctType : undefined, // acct type
-        routing: isDomestic ? routingNumber : undefined,  // <-- server expects this
-        account: isDomestic ? accountNumber : undefined,  // <-- server expects this
-
-        feePayer: !isDomestic ? feePayer : "OUR",
-        schedule: schedule === "NOW" ? { mode: "NOW" } : { mode: "FUTURE", date: scheduleDate },
-        reference,
-        memo,
-
-        // Admin hint so it appears in your admin queue/list
-        adminQueue: true,
-        adminSurface: isDomestic ? "wire_domestic" : "wire_international",
-
-        // Rich metadata for receipts
-        receiptMeta: {
-          sender: { accountLabel: fromAccount, balanceBefore: availableBalance },
+          // Recipient block (for your UI + possible server aliases)
           recipient: {
-            displayName: beneficiaryName,
             name: beneficiaryName,
             email: beneficiaryEmail,
-            address: beneficiaryAddress,
+            address: { street1: beneficiaryAddress },
             bankName,
             bankAddress,
-            country: !isDomestic ? bankCountry : "US",
-            swift: !isDomestic ? swiftBic : undefined,
-            ibanOrAcct: !isDomestic ? ibanOrAcct : undefined,
-            accountMasked: isDomestic ? maskAcct(accountNumber) : undefined,
-            routing: isDomestic ? routingNumber : undefined,
-            accountType: isDomestic ? beneficiaryAcctType : undefined,
+            routingNumber,
+            accountNumber,
+            recipientName: beneficiaryName,
           },
-          fees: {
-            bankFee,
-            networkFee: !isDomestic && feePayer === "OUR" ? estIntermediaryFees : 0,
-            currency,
-          },
-          schedule: schedule === "NOW" ? "NOW" : scheduleDate,
-          purpose,
-        },
 
-        emailNotify,
-        saveRecipient,
-      };
+          // Top-level aliases for stricter validators / existing US handler
+          recipientName: beneficiaryName,
+          recipient_name: beneficiaryName,
+          ["Recipient Name"]: beneficiaryName,
+          recipientEmail: beneficiaryEmail,
+          bankName,
+          bankAddress,
+          recipientAcctType: beneficiaryAcctType,
+          routing: routingNumber,
+          account: accountNumber,
+
+          feePayer: "OUR", // domestic wires often charged to sender
+          schedule: schedule === "NOW" ? { mode: "NOW", date: null } : { mode: "FUTURE", date: scheduleDate || null },
+          reference,
+          memo,
+
+          // Admin/receipt metadata
+          adminQueue: true,
+          adminSurface: "wire_domestic",
+          receiptMeta: {
+            sender: { accountLabel: fromAccount, balanceBefore: availableBalance },
+            recipient: {
+              displayName: beneficiaryName,
+              name: beneficiaryName,
+              email: beneficiaryEmail,
+              address: beneficiaryAddress,
+              bankName,
+              bankAddress,
+              country: "US",
+              accountMasked: maskAcct(accountNumber),
+              routing: routingNumber,
+              accountType: beneficiaryAcctType,
+            },
+            fees: { bankFee, networkFee: 0, currency: sendCur },
+            schedule: schedule === "NOW" ? "NOW" : scheduleDate,
+            purpose,
+          },
+
+          emailNotify,
+          saveRecipient,
+        };
+      } else {
+        // INTERNATIONAL — match createInternationalWire’s expectations
+        payload = {
+          // _normalizeIncoming needs fromAccount, currency, amount to compute amountCents
+          fromAccount,
+          amount: +parsedAmount.toFixed(2), // number (major units)
+          currency: sendCur,
+
+          // Controller-level fields
+          sendCurrency: sendCur,
+          recvCurrency: recvCur,
+          feePayer: String(feePayer || "SHA").toUpperCase(),
+
+          // REQUIRED by server guard: bank.name && bank.swiftBic && bank.ibanOrAcct
+          bank: {
+            name: bankName,
+            address: bankAddress || undefined,
+            country: iso2(bankCountry),
+            swiftBic: swiftBic,     // camelCase key
+            ibanOrAcct: ibanOrAcct, // single accepted field
+          },
+
+          // Beneficiary object (server sets beneficiary.name = t.recipient)
+          beneficiary: {
+            type: beneficiaryType,
+            name: beneficiaryName,
+            email: beneficiaryEmail || undefined,
+            address: beneficiaryAddress || undefined,
+          },
+
+          // CRITICAL: server ensures t.recipient length > 0
+          recipient: beneficiaryName,
+
+          // Optional intermediary in same key style
+          intermediary: useIntermediary
+            ? {
+                name: interName || undefined,
+                swiftBic: interSwift || undefined,
+                ibanOrAcct: interAcct || undefined,
+              }
+            : undefined,
+
+          purpose,
+          schedule: schedule === "NOW" ? { mode: "NOW", date: null } : { mode: "FUTURE", date: scheduleDate || null },
+          reference: reference || undefined,
+          memo: memo || undefined,
+
+          // Fees as major units (backend converts to cents)
+          fees: {
+            bankFee: bankFee,
+            estNetworkFees: feePayer === "OUR" ? estIntermediaryFees : 0,
+          },
+
+          // Extras for your admin/receipt surfaces (optional)
+          adminQueue: true,
+          adminSurface: "wire_international",
+          receiptMeta: {
+            sender: { accountLabel: fromAccount, balanceBefore: availableBalance },
+            recipient: {
+              displayName: beneficiaryName,
+              name: beneficiaryName,
+              email: beneficiaryEmail,
+              address: beneficiaryAddress,
+              bankName,
+              bankAddress,
+              country: iso2(bankCountry),
+              swift: swiftBic,
+              ibanOrAcct,
+            },
+            fees: {
+              bankFee,
+              networkFee: feePayer === "OUR" ? estIntermediaryFees : 0,
+              currency: sendCur,
+            },
+            schedule: schedule === "NOW" ? "NOW" : scheduleDate,
+            purpose,
+          },
+
+          emailNotify,
+          saveRecipient,
+        };
+      }
 
       const res: any = await API.initiateTransfer(payload);
 
@@ -331,7 +425,7 @@ export default function WireTransferPage() {
         referenceId,
         status: res?.status || "PENDING_ADMIN",
         eta: etaText(),
-        amount: { value: parsedAmount, currency },
+        amount: { value: parsedAmount, currency: sendCur },
         rail: isDomestic ? "wire_domestic" : "wire_international",
         sender: { accountName: fromAccount },
         recipient: {
@@ -348,7 +442,7 @@ export default function WireTransferPage() {
         fees: {
           app: bankFee,
           network: !isDomestic && feePayer === "OUR" ? estIntermediaryFees : 0,
-          currency,
+          currency: sendCur,
         },
         note: memo || reference || undefined,
       });
@@ -366,7 +460,7 @@ export default function WireTransferPage() {
     setSubmitting(true);
     setOtpError(null);
     try {
-      // ✅ Use plural route + { otp } payload to match backend
+      // Use plural route + { otp } payload to match backend
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
       const r = await fetch(`${API_BASE}/transfers/${encodeURIComponent(otpRef)}/confirm`, {
         method: "POST",
@@ -378,7 +472,6 @@ export default function WireTransferPage() {
         throw new Error(data?.error || "Invalid code");
       }
 
-      // Only AFTER successful OTP: flag open txn and go to pending page
       try {
         localStorage.setItem("hb_open_txn", "1");
       } catch {}
@@ -625,7 +718,7 @@ export default function WireTransferPage() {
 
                   {/* Intermediary (optional) */}
                   <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-4">
-                    <label className="inline-flex items-center gap-3 text-sm">
+                    <label className="inline-flex items-center gap-3 text_sm">
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded-md accent-cyan-400"
@@ -1025,7 +1118,7 @@ function Sheet({
         className="absolute right-0 top-0 h-full w-full sm:w-[640px] bg-[#0F1622] border-l border-white/20 shadow-[0_12px_48px_rgba(0,0,0,0.7)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/20">
+        <div className="flex items-center justify_between px-6 py-5 border-b border-white/20">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
             aria-label="Close"
@@ -1066,7 +1159,7 @@ function OtpSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/20">
-          <h3 className="text-base font-semibold">Enter OTP to continue</h3>
+          <h3 className="text-base font_semibold">Enter OTP to continue</h3>
           <button
             aria-label="Close"
             className="h-10 w-10 rounded-2xl hover:bg-white/15 grid place-items-center transition-all"
@@ -1090,7 +1183,7 @@ function OtpSheet({
           </div>
           {error && <div className="text-rose-300 text-sm">{error}</div>}
           <div className="flex items-center justify-end gap-3">
-            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition" onClick={onClose}>
+            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg_white/15 transition" onClick={onClose}>
               Cancel
             </button>
             <button
