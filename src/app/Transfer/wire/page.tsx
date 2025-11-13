@@ -250,6 +250,7 @@ export default function WireTransferPage() {
   };
 
   /* -------------------------------- Submit flow ------------------------------- */
+    /* -------------------------------- Submit flow ------------------------------- */
   async function submitWire() {
     if (!canReview || submitting) return;
     setSubmitting(true);
@@ -291,9 +292,9 @@ export default function WireTransferPage() {
           },
 
           // Top-level aliases for stricter validators / existing US handler
-          recipientName: beneficiaryName,
-          recipient_name: beneficiaryName,
-          ["Recipient Name"]: beneficiaryName,
+          recipientName: recipientName,
+          recipient_name: recipientName,
+          ["Recipient Name"]: recipientName,
           recipientEmail: beneficiaryEmail,
           bankName,
           bankAddress,
@@ -302,7 +303,10 @@ export default function WireTransferPage() {
           account: accountNumber,
 
           feePayer: "OUR",
-          schedule: schedule === "NOW" ? { mode: "NOW", date: null } : { mode: "FUTURE", date: scheduleDate || null },
+          schedule:
+            schedule === "NOW"
+              ? { mode: "NOW", date: null }
+              : { mode: "FUTURE", date: scheduleDate || null },
           reference,
           memo,
 
@@ -332,17 +336,32 @@ export default function WireTransferPage() {
           saveRecipient,
         };
       } else {
-        // INTERNATIONAL — match createInternationalWire expectations
+        // 🌍 INTERNATIONAL — match createInternationalWire expectations
         payload = {
-          // _normalizeIncoming needs fromAccount, currency, amount to compute amountCents
+          // _normalizeIncoming needs these
           fromAccount,
           amount: +parsedAmount.toFixed(2), // number (major units)
           currency: sendCur,
 
-          // Controller-level fields
+          // Controller-level FX fields
           sendCurrency: sendCur,
           recvCurrency: recvCur,
           feePayer: String(feePayer || "SHA").toUpperCase(),
+
+          // ✅ top-level recipient string + aliases
+          recipient: recipientName,
+          recipientName: recipientName,
+          recipient_name: recipientName,
+          ["Recipient Name"]: recipientName,
+          name: recipientName,
+
+          // Beneficiary object (server later overrides name with t.recipient)
+          beneficiary: {
+            type: beneficiaryType,
+            name: recipientName,
+            email: beneficiaryEmail || undefined,
+            address: beneficiaryAddress || undefined,
+          },
 
           // REQUIRED by server guard: bank.name && bank.swiftBic && bank.ibanOrAcct
           bank: {
@@ -353,18 +372,7 @@ export default function WireTransferPage() {
             ibanOrAcct: ibanOrAcct,
           },
 
-          // Beneficiary object (server sets beneficiary.name = t.recipient on ledger)
-          beneficiary: {
-            type: beneficiaryType,
-            name: recipientName,
-            email: beneficiaryEmail || undefined,
-            address: beneficiaryAddress || undefined,
-          },
-
-          // ✅ top-level recipient string (required by backend normalizer)
-          recipient: recipientName,
-
-          // Optional intermediary in same key style
+          // Optional intermediary
           intermediary: useIntermediary
             ? {
                 name: interName || undefined,
@@ -374,7 +382,10 @@ export default function WireTransferPage() {
             : undefined,
 
           purpose,
-          schedule: schedule === "NOW" ? { mode: "NOW", date: null } : { mode: "FUTURE", date: scheduleDate || null },
+          schedule:
+            schedule === "NOW"
+              ? { mode: "NOW", date: null }
+              : { mode: "FUTURE", date: scheduleDate || null },
           reference: reference || undefined,
           memo: memo || undefined,
 
@@ -384,14 +395,14 @@ export default function WireTransferPage() {
             estNetworkFees: feePayer === "OUR" ? estIntermediaryFees : 0,
           },
 
-          // Extras for admin/receipt surfaces (optional)
+          // Admin / receipts (optional but nice)
           adminQueue: true,
           adminSurface: "wire_international",
           receiptMeta: {
             sender: { accountLabel: fromAccount, balanceBefore: availableBalance },
             recipient: {
-              displayName: beneficiaryName,
-              name: beneficiaryName,
+              displayName: recipientName,
+              name: recipientName,
               email: beneficiaryEmail,
               address: beneficiaryAddress,
               bankName,
@@ -417,7 +428,9 @@ export default function WireTransferPage() {
       const res: any = await API.initiateTransfer(payload);
 
       const referenceId =
-        res?.referenceId || res?.ref || ("WR-" + Math.random().toString(36).slice(2, 10).toUpperCase());
+        res?.referenceId ||
+        res?.ref ||
+        ("WR-" + Math.random().toString(36).slice(2, 10).toUpperCase());
 
       if (res?.status === "OTP_REQUIRED") {
         setOtpRef(referenceId);
