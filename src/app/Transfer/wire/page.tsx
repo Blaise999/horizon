@@ -431,11 +431,14 @@ export default function WireTransferPage() {
       const endpoint = isDomestic ? 'usa' : 'wire_international';
       const url = `${API_BASE}/transfers/${endpoint}`;
 
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+ // inside submitWire()
+const r = await fetch(url, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),
+  credentials: "include",          // 🔥 send session cookie
+});
+
 
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
@@ -496,11 +499,14 @@ export default function WireTransferPage() {
     setOtpError(null);
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
-      const r = await fetch(`${API_BASE}/transfers/${encodeURIComponent(otpRef)}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ otp: otpCode }),
-      });
+// inside verifyOtpNow()
+const r = await fetch(`${API_BASE}/transfers/${encodeURIComponent(otpRef)}/confirm`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ otp: otpCode }),
+  credentials: "include",          // 🔥 send session cookie
+});
+
       const data = await r.json();
       if (!r.ok || data?.ok === false) {
         throw new Error(data?.error || "Invalid code");
