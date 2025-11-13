@@ -219,7 +219,9 @@ export default function WireTransferPage() {
     return "•••• " + end;
   }
   function etaText(): string {
-    return wireType === "DOMESTIC" ? "Same business day (cutoff dependent)" : "1–2 business days (SWIFT)";
+    return wireType === "DOMESTIC"
+      ? "Same business day (cutoff dependent)"
+      : "1–2 business days (SWIFT)";
   }
   function openReview(e: React.FormEvent) {
     e.preventDefault();
@@ -232,9 +234,9 @@ export default function WireTransferPage() {
     const m: Record<string, string> = {
       "United States": "US",
       "United Kingdom": "GB",
-      "England": "GB",
-      "Wales": "GB",
-      "Scotland": "GB",
+      England: "GB",
+      Wales: "GB",
+      Scotland: "GB",
       "Northern Ireland": "GB",
       Germany: "DE",
       France: "FR",
@@ -250,7 +252,6 @@ export default function WireTransferPage() {
   };
 
   /* -------------------------------- Submit flow ------------------------------- */
-    /* -------------------------------- Submit flow ------------------------------- */
   async function submitWire() {
     if (!canReview || submitting) return;
     setSubmitting(true);
@@ -275,12 +276,11 @@ export default function WireTransferPage() {
           amount: +parsedAmount.toFixed(2), // number (major units)
           currency: sendCur,
 
-          // ✅ top-level recipient string (required by backend normalizer)
+          // top-level recipient string (required by backend normalizer)
           recipient: recipientName,
 
           // Recipient block (UI/aliases)
           recipientDetails: {
-            // keeping details separate to avoid ambiguity with string `recipient`
             name: beneficiaryName,
             email: beneficiaryEmail,
             address: { street1: beneficiaryAddress },
@@ -291,7 +291,7 @@ export default function WireTransferPage() {
             recipientName: beneficiaryName,
           },
 
-          // Top-level aliases for stricter validators / existing US handler
+          // Top-level aliases
           recipientName: recipientName,
           recipient_name: recipientName,
           ["Recipient Name"]: recipientName,
@@ -336,11 +336,13 @@ export default function WireTransferPage() {
           saveRecipient,
         };
       } else {
-        // 🌍 INTERNATIONAL — match createInternationalWire expectations
+        // INTERNATIONAL — match createInternationalWire expectations
         payload = {
+          rail: "wire_international",
+
           // _normalizeIncoming needs these
           fromAccount,
-          amount: +parsedAmount.toFixed(2), // number (major units)
+          amount: +parsedAmount.toFixed(2),
           currency: sendCur,
 
           // Controller-level FX fields
@@ -348,14 +350,14 @@ export default function WireTransferPage() {
           recvCurrency: recvCur,
           feePayer: String(feePayer || "SHA").toUpperCase(),
 
-          // ✅ top-level recipient string + aliases
+          // top-level recipient string + aliases
           recipient: recipientName,
           recipientName: recipientName,
           recipient_name: recipientName,
           ["Recipient Name"]: recipientName,
           name: recipientName,
 
-          // Beneficiary object (server later overrides name with t.recipient)
+          // Beneficiary object
           beneficiary: {
             type: beneficiaryType,
             name: recipientName,
@@ -395,7 +397,7 @@ export default function WireTransferPage() {
             estNetworkFees: feePayer === "OUR" ? estIntermediaryFees : 0,
           },
 
-          // Admin / receipts (optional but nice)
+          // Admin / receipts
           adminQueue: true,
           adminSurface: "wire_international",
           receiptMeta: {
@@ -478,7 +480,6 @@ export default function WireTransferPage() {
     setSubmitting(true);
     setOtpError(null);
     try {
-      // Use plural route + { otp } payload to match backend
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
       const r = await fetch(`${API_BASE}/transfers/${encodeURIComponent(otpRef)}/confirm`, {
         method: "POST",
@@ -512,7 +513,10 @@ export default function WireTransferPage() {
         <div className="max-w-5xl mx-auto">
           {/* Back */}
           <div className="flex items-center gap-3 mb-6">
-            <a href="/dashboard/dashboard" className="inline-flex items-center gap-2 text-white/70 hover:text-white transition">
+            <a
+              href="/dashboard/dashboard"
+              className="inline-flex items-center gap-2 text-white/70 hover:text-white transition"
+            >
               <ArrowLeft className="h-5 w-5" /> Back to dashboard
             </a>
           </div>
@@ -523,12 +527,15 @@ export default function WireTransferPage() {
               <div>
                 <h1 className="text-xl md:text-2xl font-semibold">Wire Transfer</h1>
                 <p className="text-white/70 mt-1">
-                  Send funds via <span className="text-white">Domestic</span> or <span className="text-white">International</span> wire.
+                  Send funds via <span className="text-white">Domestic</span> or{" "}
+                  <span className="text-white">International</span> wire.
                 </p>
               </div>
               <div className="hidden sm:block text-sm text-white/70">
                 Available {fromAccount}:{" "}
-                <span className="text-white font-semibold">{isHydrated ? formatMoney(availableBalance) : "—"}</span>
+                <span className="text-white font-semibold">
+                  {isHydrated ? formatMoney(availableBalance) : "—"}
+                </span>
               </div>
             </div>
 
@@ -541,8 +548,18 @@ export default function WireTransferPage() {
                   value={fromAccount}
                   onChange={(v) => setFromAccount(v as AccountType)}
                   options={[
-                    { value: "Checking", label: `Checking — ${isHydrated ? formatMoney(checkingBalance) : "—"}` },
-                    { value: "Savings", label: `Savings — ${isHydrated ? formatMoney(savingsBalance) : "—"}` },
+                    {
+                      value: "Checking",
+                      label: `Checking — ${
+                        isHydrated ? formatMoney(checkingBalance) : "—"
+                      }`,
+                    },
+                    {
+                      value: "Savings",
+                      label: `Savings — ${
+                        isHydrated ? formatMoney(savingsBalance) : "—"
+                      }`,
+                    },
                   ]}
                   icon={<Building2 className="h-4 w-4" />}
                 />
@@ -560,10 +577,12 @@ export default function WireTransferPage() {
                   label="Currency"
                   value={currency}
                   onChange={(v) => setCurrency(v as Currency)}
-                  options={["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "NGN", "ZAR"].map((c) => ({
-                    value: c,
-                    label: c,
-                  }))}
+                  options={["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "NGN", "ZAR"].map(
+                    (c) => ({
+                      value: c,
+                      label: c,
+                    })
+                  )}
                   icon={<DollarSign className="h-4 w-4" />}
                 />
                 <LabeledMoney
@@ -573,7 +592,11 @@ export default function WireTransferPage() {
                   icon={<DollarSign className="h-4 w-4" />}
                   hint={`Bank fee: ${formatMoney(bankFee)}${
                     wireType === "INTERNATIONAL"
-                      ? ` • Est. network fees (${feePayer}): ${feePayer === "OUR" ? formatMoney(estIntermediaryFees) : "$0.00"}`
+                      ? ` • Est. network fees (${feePayer}): ${
+                          feePayer === "OUR"
+                            ? formatMoney(estIntermediaryFees)
+                            : "$0.00"
+                        }`
                       : ""
                   } • Total debit: ${formatMoney(totalDebit)}`}
                   invalidMsg={
@@ -605,21 +628,31 @@ export default function WireTransferPage() {
                   value={beneficiaryName}
                   onChange={setBeneficiaryName}
                   icon={<User className="h-4 w-4" />}
-                  invalidMsg={beneficiaryName && beneficiaryName.trim().length < 2 ? "Enter a valid name." : undefined}
+                  invalidMsg={
+                    beneficiaryName && beneficiaryName.trim().length < 2
+                      ? "Enter a valid name."
+                      : undefined
+                  }
                 />
                 <LabeledInput
                   label="Beneficiary email"
                   value={beneficiaryEmail}
                   onChange={setBeneficiaryEmail}
                   icon={<Mail className="h-4 w-4" />}
-                  invalidMsg={beneficiaryEmail && !emailValid ? "Enter a valid email." : undefined}
+                  invalidMsg={
+                    beneficiaryEmail && !emailValid ? "Enter a valid email." : undefined
+                  }
                 />
                 <LabeledInput
                   label="Beneficiary address"
                   value={beneficiaryAddress}
                   onChange={setBeneficiaryAddress}
                   icon={<NotebookPen className="h-4 w-4" />}
-                  invalidMsg={beneficiaryAddress && !addressValid ? "Enter a valid address." : undefined}
+                  invalidMsg={
+                    beneficiaryAddress && !addressValid
+                      ? "Enter a valid address."
+                      : undefined
+                  }
                 />
               </div>
 
@@ -632,32 +665,55 @@ export default function WireTransferPage() {
                       value={bankName}
                       onChange={setBankName}
                       icon={<Landmark className="h-4 w-4" />}
-                      invalidMsg={bankName && bankName.trim().length < 2 ? "Enter a valid bank name." : undefined}
+                      invalidMsg={
+                        bankName && bankName.trim().length < 2
+                          ? "Enter a valid bank name."
+                          : undefined
+                      }
                     />
                     <LabeledInput
                       label="Bank address"
                       value={bankAddress}
                       onChange={setBankAddress}
                       icon={<NotebookPen className="h-4 w-4" />}
-                      invalidMsg={bankAddress && !bankAddrValid ? "Enter a valid bank address." : undefined}
+                      invalidMsg={
+                        bankAddress && !bankAddrValid
+                          ? "Enter a valid bank address."
+                          : undefined
+                      }
                     />
                   </div>
                   <div className="grid md:grid-cols-3 gap-5">
                     <LabeledInput
                       label="Routing number (ABA — 9 digits)"
                       value={routingNumber}
-                      onChange={(v) => setRoutingNumber(v.replace(/\D/g, "").slice(0, 9))}
+                      onChange={(v) =>
+                        setRoutingNumber(v.replace(/\D/g, "").slice(0, 9))
+                      }
                       maxLength={9}
                       icon={<Shield className="h-4 w-4" />}
-                      invalidMsg={routingNumber && !routingValid ? "Routing must be exactly 9 digits." : undefined}
+                      invalidMsg={
+                        routingNumber && !routingValid
+                          ? "Routing must be exactly 9 digits."
+                          : undefined
+                      }
                     />
-                    <LabeledInput label="Account number" value={accountNumber} onChange={(v) => setAccountNumber(v.replace(/\s/g, ""))} icon={<Lock className="h-4 w-4" />} />
+                    <LabeledInput
+                      label="Account number"
+                      value={accountNumber}
+                      onChange={(v) => setAccountNumber(v.replace(/\s/g, ""))}
+                      icon={<Lock className="h-4 w-4" />}
+                    />
                     <LabeledInput
                       label="Confirm account number"
                       value={accountNumber2}
                       onChange={(v) => setAccountNumber2(v.replace(/\s/g, ""))}
                       icon={<Lock className="h-4 w-4" />}
-                      invalidMsg={accountNumber2 && !acctMatch ? "Account numbers must match." : undefined}
+                      invalidMsg={
+                        accountNumber2 && !acctMatch
+                          ? "Account numbers must match."
+                          : undefined
+                      }
                     />
                   </div>
                   <div className="grid md:grid-cols-3 gap-5">
@@ -690,7 +746,11 @@ export default function WireTransferPage() {
                       min={isHydrated ? todayISO : undefined}
                       icon={<CalendarIcon className="h-4 w-4" />}
                       invalidMsg={
-                        schedule === "FUTURE" && scheduleDate && isHydrated && todayISO && scheduleDate < todayISO
+                        schedule === "FUTURE" &&
+                        scheduleDate &&
+                        isHydrated &&
+                        todayISO &&
+                        scheduleDate < todayISO
                           ? "Pick a future date."
                           : undefined
                       }
@@ -705,32 +765,55 @@ export default function WireTransferPage() {
                       value={bankName}
                       onChange={setBankName}
                       icon={<Landmark className="h-4 w-4" />}
-                      invalidMsg={bankName && bankName.trim().length < 2 ? "Enter a valid bank name." : undefined}
+                      invalidMsg={
+                        bankName && bankName.trim().length < 2
+                          ? "Enter a valid bank name."
+                          : undefined
+                      }
                     />
                     <LabeledInput
                       label="Bank address"
                       value={bankAddress}
                       onChange={setBankAddress}
                       icon={<NotebookPen className="h-4 w-4" />}
-                      invalidMsg={bankAddress && !bankAddrValid ? "Enter a valid bank address." : undefined}
+                      invalidMsg={
+                        bankAddress && !bankAddrValid
+                          ? "Enter a valid bank address."
+                          : undefined
+                      }
                     />
                   </div>
                   <div className="grid md:grid-cols-3 gap-5">
-                    <LabeledInput label="Bank country" value={bankCountry} onChange={setBankCountry} icon={<Globe2 className="h-4 w-4" />} />
+                    <LabeledInput
+                      label="Bank country"
+                      value={bankCountry}
+                      onChange={setBankCountry}
+                      icon={<Globe2 className="h-4 w-4" />}
+                    />
                     <LabeledInput
                       label="SWIFT/BIC (8 or 11 chars)"
                       value={swiftBic}
-                      onChange={(v) => setSwiftBic(v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11))}
+                      onChange={(v) =>
+                        setSwiftBic(
+                          v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11)
+                        )
+                      }
                       icon={<Shield className="h-4 w-4" />}
                       maxLength={11}
-                      invalidMsg={swiftBic && !swiftValid ? "Invalid SWIFT/BIC format." : undefined}
+                      invalidMsg={
+                        swiftBic && !swiftValid ? "Invalid SWIFT/BIC format." : undefined
+                      }
                     />
                     <LabeledInput
                       label="IBAN / Account number"
                       value={ibanOrAcct}
                       onChange={(v) => setIbanOrAcct(v.toUpperCase().trim())}
                       icon={<Lock className="h-4 w-4" />}
-                      invalidMsg={ibanOrAcct && !ibanOrAcctValid ? "Enter a valid IBAN or local account number." : undefined}
+                      invalidMsg={
+                        ibanOrAcct && !ibanOrAcctValid
+                          ? "Enter a valid IBAN or local account number."
+                          : undefined
+                      }
                     />
                   </div>
 
@@ -748,14 +831,28 @@ export default function WireTransferPage() {
 
                     {useIntermediary && (
                       <div className="mt-4 grid md:grid-cols-3 gap-4">
-                        <LabeledInput label="Intermediary bank name" value={interName} onChange={setInterName} icon={<Landmark className="h-4 w-4" />} />
+                        <LabeledInput
+                          label="Intermediary bank name"
+                          value={interName}
+                          onChange={setInterName}
+                          icon={<Landmark className="h-4 w-4" />}
+                        />
                         <LabeledInput
                           label="Intermediary SWIFT/BIC"
                           value={interSwift}
-                          onChange={(v) => setInterSwift(v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11))}
+                          onChange={(v) =>
+                            setInterSwift(
+                              v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11)
+                            )
+                          }
                           icon={<Shield className="h-4 w-4" />}
                         />
-                        <LabeledInput label="For further credit to (acct)" value={interAcct} onChange={setInterAcct} icon={<Lock className="h-4 w-4" />} />
+                        <LabeledInput
+                          label="For further credit to (acct)"
+                          value={interAcct}
+                          onChange={setInterAcct}
+                          icon={<Lock className="h-4 w-4" />}
+                        />
                       </div>
                     )}
                   </div>
@@ -809,13 +906,27 @@ export default function WireTransferPage() {
                       min={isHydrated ? todayISO : undefined}
                       icon={<CalendarIcon className="h-4 w-4" />}
                       invalidMsg={
-                        schedule === "FUTURE" && scheduleDate && isHydrated && todayISO && scheduleDate < todayISO
+                        schedule === "FUTURE" &&
+                        scheduleDate &&
+                        isHydrated &&
+                        todayISO &&
+                        scheduleDate < todayISO
                           ? "Pick a future date."
                           : undefined
                       }
                     />
-                    <LabeledInput label="Reference (for beneficiary)" value={reference} onChange={setReference} icon={<NotebookPen className="h-4 w-4" />} />
-                    <LabeledInput label="Memo (internal)" value={memo} onChange={setMemo} icon={<NotebookPen className="h-4 w-4" />} />
+                    <LabeledInput
+                      label="Reference (for beneficiary)"
+                      value={reference}
+                      onChange={setReference}
+                      icon={<NotebookPen className="h-4 w-4" />}
+                    />
+                    <LabeledInput
+                      label="Memo (internal)"
+                      value={memo}
+                      onChange={setMemo}
+                      icon={<NotebookPen className="h-4 w-4" />}
+                    />
                   </div>
                 </>
               )}
@@ -860,7 +971,10 @@ export default function WireTransferPage() {
                     checked={confirmNoSanctions}
                     onChange={(e) => setConfirmNoSanctions(e.target.checked)}
                   />
-                  <span>The beneficiary is not subject to sanctions and this transfer complies with applicable laws.</span>
+                  <span>
+                    The beneficiary is not subject to sanctions and this transfer complies
+                    with applicable laws.
+                  </span>
                 </label>
                 <label className="flex items-start gap-3">
                   <input
@@ -869,7 +983,10 @@ export default function WireTransferPage() {
                     checked={confirmNoProhibited}
                     onChange={(e) => setConfirmNoProhibited(e.target.checked)}
                   />
-                  <span>This transfer is not for prohibited goods/services per our terms and the receiving bank’s policies.</span>
+                  <span>
+                    This transfer is not for prohibited goods/services per our terms and
+                    the receiving bank’s policies.
+                  </span>
                 </label>
               </div>
 
@@ -879,25 +996,36 @@ export default function WireTransferPage() {
                   Bank fee: <span className="text-white">{formatMoney(bankFee)}</span>
                   {wireType === "INTERNATIONAL" && (
                     <>
-                      {" "}• Est. network fees ({feePayer}):{" "}
+                      {" "}
+                      • Est. network fees ({feePayer}):{" "}
                       <span className="text-white">
                         {feePayer === "OUR" ? formatMoney(estIntermediaryFees) : "$0.00"}
                       </span>
                     </>
                   )}{" "}
-                  • Total debit: <span className="text-white">{isHydrated ? formatMoney(totalDebit) : "—"}</span>
+                  • Total debit:{" "}
+                  <span className="text-white">
+                    {isHydrated ? formatMoney(totalDebit) : "—"}
+                  </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <a href="/dashboard/dashboard" className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition">
+                  <a
+                    href="/dashboard/dashboard"
+                    className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition"
+                  >
                     Cancel
                   </a>
                   <button
                     type="submit"
                     disabled={!canReview || !isHydrated}
                     className={`px-5 py-3 rounded-2xl transition shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
-                      canReview && isHydrated ? "text-[#0B0F14]" : "opacity-60 cursor-not-allowed text-[#0B0F14]"
+                      canReview && isHydrated
+                        ? "text-[#0B0F14]"
+                        : "opacity-60 cursor-not-allowed text-[#0B0F14]"
                     }`}
-                    style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
+                    style={{
+                      backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)",
+                    }}
                   >
                     Review & Send
                   </button>
@@ -909,21 +1037,42 @@ export default function WireTransferPage() {
       </section>
 
       {/* Review Sheet */}
-      <Sheet open={showReview} onClose={() => setShowReview(false)} title="Review wire transfer">
+      <Sheet
+        open={showReview}
+        onClose={() => setShowReview(false)}
+        title="Review wire transfer"
+      >
         <div className="space-y-4 text-sm">
-          <ReviewRow k="From" v={`${fromAccount} — ${isHydrated ? formatMoney(availableBalance) : "—"}`} />
-          <ReviewRow k="Type" v={wireType === "DOMESTIC" ? "Domestic (US)" : "International"} />
-          <ReviewRow k="Currency / Amount" v={`${currency} ${numFmt2.format(parsedAmount || 0)}`} />
+          <ReviewRow
+            k="From"
+            v={`${fromAccount} — ${
+              isHydrated ? formatMoney(availableBalance) : "—"
+            }`}
+          />
+          <ReviewRow
+            k="Type"
+            v={wireType === "DOMESTIC" ? "Domestic (US)" : "International"}
+          />
+          <ReviewRow
+            k="Currency / Amount"
+            v={`${currency} ${numFmt2.format(parsedAmount || 0)}`}
+          />
           <ReviewRow k="Beneficiary" v={`${beneficiaryName} (${beneficiaryType})`} />
           <ReviewRow k="Beneficiary email" v={beneficiaryEmail} />
           <ReviewRow k="Beneficiary address" v={beneficiaryAddress} />
 
           <div className="h-px bg-white/20 my-2" />
-          <ReviewRow k="Bank" v={`${bankName}${bankAddress ? " — " + bankAddress : ""}`} />
+          <ReviewRow
+            k="Bank"
+            v={`${bankName}${bankAddress ? " — " + bankAddress : ""}`}
+          />
           {wireType === "DOMESTIC" ? (
             <>
               <ReviewRow k="Routing (ABA)" v={routingNumber} />
-              <ReviewRow k="Account" v={`${maskAcct(accountNumber)} (${beneficiaryAcctType})`} />
+              <ReviewRow
+                k="Account"
+                v={`${maskAcct(accountNumber)} (${beneficiaryAcctType})`}
+              />
             </>
           ) : (
             <>
@@ -941,36 +1090,56 @@ export default function WireTransferPage() {
               )}
               <ReviewRow
                 k="Fees"
-                v={feePayer === "OUR" ? "OUR — Sender pays all" : feePayer === "SHA" ? "SHA — Split fees" : "BEN — Beneficiary pays"}
+                v={
+                  feePayer === "OUR"
+                    ? "OUR — Sender pays all"
+                    : feePayer === "SHA"
+                    ? "SHA — Split fees"
+                    : "BEN — Beneficiary pays"
+                }
               />
               <ReviewRow k="Purpose" v={purpose} />
             </>
           )}
 
           <div className="h-px bg-white/20 my-2" />
-          <ReviewRow k="Schedule" v={schedule === "NOW" ? "Send now" : `Scheduled — ${scheduleDate || "—"}`} />
+          <ReviewRow
+            k="Schedule"
+            v={schedule === "NOW" ? "Send now" : `Scheduled — ${scheduleDate || "—"}`}
+          />
           {reference && <ReviewRow k="Reference" v={reference} />}
           {memo && <ReviewRow k="Memo" v={memo} />}
 
           <div className="h-px bg-white/20 my-3" />
           <div className="flex items-center justify-between text-base">
             <div>Total debit (estimate)</div>
-            <div className="font-semibold">{isHydrated ? formatMoney(totalDebit) : "—"}</div>
+            <div className="font-semibold">
+              {isHydrated ? formatMoney(totalDebit) : "—"}
+            </div>
           </div>
           <div className="text-xs text-white/60">
             Includes bank fee {formatMoney(bankFee)}
-            {wireType === "INTERNATIONAL" && feePayer === "OUR" ? <> and estimated network fees {formatMoney(estIntermediaryFees)}.</> : "."}
+            {wireType === "INTERNATIONAL" && feePayer === "OUR" ? (
+              <> and estimated network fees {formatMoney(estIntermediaryFees)}.</>
+            ) : (
+              "."
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition" onClick={() => setShowReview(false)}>
+            <button
+              className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition"
+              onClick={() => setShowReview(false)}
+            >
               Edit details
             </button>
             <button
               onClick={submitWire}
               disabled={submitting || !isHydrated}
               className="px-5 py-3 rounded-2xl text-[#0B0F14] transition shadow-[0_12px_32px_rgba(0,180,216,.35)]"
-              style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
+              style={{
+                backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)",
+              }}
             >
               {submitting ? "Sending…" : "Confirm & Send"}
             </button>
@@ -979,7 +1148,14 @@ export default function WireTransferPage() {
       </Sheet>
 
       {/* OTP Sheet */}
-      <OtpSheet open={otpOpen} onClose={() => setOtpOpen(false)} onSubmit={verifyOtpNow} code={otpCode} setCode={setOtpCode} error={otpError} />
+      <OtpSheet
+        open={otpOpen}
+        onClose={() => setOtpOpen(false)}
+        onSubmit={verifyOtpNow}
+        code={otpCode}
+        setCode={setOtpCode}
+        error={otpError}
+      />
     </main>
   );
 }
@@ -1013,7 +1189,11 @@ function LabeledInput({
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <input
           type={type}
           value={value}
@@ -1022,9 +1202,9 @@ function LabeledInput({
           maxLength={maxLength}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`w-full rounded-2xl bg-white/10 border ${invalidMsg ? "border-rose-400/60" : "border-white/20"} ${
-            icon ? "pl-11" : "pl-4"
-          } pr-4 py-3 text-base shadow-inner`}
+          className={`w-full rounded-2xl bg-white/10 border ${
+            invalidMsg ? "border-rose-400/60" : "border-white/20"
+          } ${icon ? "pl-11" : "pl-4"} pr-4 py-3 text-base shadow-inner`}
         />
       </div>
       {invalidMsg && <span className="text-xs text-rose-300">{invalidMsg}</span>}
@@ -1049,11 +1229,17 @@ function LabeledSelect({
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full rounded-2xl bg-white/10 border border-white/20 ${icon ? "pl-10" : "pl-3"} pr-4 py-3 text-base shadow-inner`}
+          className={`w-full rounded-2xl bg-white/10 border border-white/20 ${
+            icon ? "pl-10" : "pl-3"
+          } pr-4 py-3 text-base shadow-inner`}
         >
           {options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -1084,26 +1270,36 @@ function LabeledMoney({
   function blurFormat(v: string) {
     const n = Number(v.replace(/[^\d.]/g, ""));
     if (!isFinite(n) || n === 0) return v.trim();
-    return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return n
+      .toFixed(2)
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
   return (
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <input
           inputMode="decimal"
           value={value}
           onBlur={() => onChange(blurFormat(value))}
           onChange={(e) => onChange(e.target.value)}
           placeholder="0.00"
-          className={`w-full rounded-2xl bg-white/10 border ${invalidMsg ? "border-rose-400/60" : "border-white/20"} ${
-            icon ? "pl-11" : "pl-4"
-          } pr-4 py-3 text-base shadow-inner`}
+          className={`w-full rounded-2xl bg-white/10 border ${
+            invalidMsg ? "border-rose-400/60" : "border-white/20"
+          } ${icon ? "pl-11" : "pl-4"} pr-4 py-3 text-base shadow-inner`}
         />
       </div>
-      {invalidMsg ? <span className="text-xs text-rose-300">{invalidMsg}</span> : hint && <span className="text-xs text-white/60">{hint}</span>}
+      {invalidMsg ? (
+        <span className="text-xs text-rose-300">{invalidMsg}</span>
+      ) : (
+        hint && <span className="text-xs text-white/60">{hint}</span>
+      )}
     </label>
   );
 }
@@ -1188,25 +1384,33 @@ function OtpSheet({
         </div>
         <div className="p-6 space-y-4">
           <p className="text-white/70 text-sm">
-            We’ve sent a one-time passcode to your email. Enter it below to submit your wire for admin approval.
+            We’ve sent a one-time passcode to your email. Enter it below to submit
+            your wire for admin approval.
           </p>
           <div className="relative">
             <input
               inputMode="numeric"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+              }
               placeholder="6-digit code"
-              className={`w-full rounded-2xl bg-white/10 border ${error ? "border-rose-400/60" : "border-white/20"} px-4 py-3 text-base shadow-inner tracking-widest text-center`}
+              className={`w-full rounded-2xl bg-white/10 border ${
+                error ? "border-rose-400/60" : "border-white/20"
+              } px-4 py-3 text-base shadow-inner tracking-widest text-center`}
             />
           </div>
           {error && <div className="text-rose-300 text-sm">{error}</div>}
           <div className="flex items-center justify-end gap-3">
-            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition" onClick={onClose}>
+            <button
+              className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button
               className="px-5 py-3 rounded-2xl text-[#0B0F14] transition shadow-[0_12px_32px_rgba(0,180,216,.35)]"
-              style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)"}}
+              style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
               onClick={onSubmit}
               disabled={!code || code.length < 6}
             >
