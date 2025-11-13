@@ -426,10 +426,11 @@ export default function WireTransferPage() {
           saveRecipient,
         };
       }
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
+// ✅ backend route is /international, NOT /wire_international
+const endpoint = isDomestic ? "usa" : "international";
+const url = `${API_BASE}/transfers/${endpoint}`;
 
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
-      const endpoint = isDomestic ? 'usa' : 'wire_international';
-      const url = `${API_BASE}/transfers/${endpoint}`;
 
  // inside submitWire()
 const r = await fetch(url, {
