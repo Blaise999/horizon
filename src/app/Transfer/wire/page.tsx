@@ -236,13 +236,13 @@ export default function WireTransferPage() {
       "Wales": "GB",
       "Scotland": "GB",
       "Northern Ireland": "GB",
-      "Germany": "DE",
-      "France": "FR",
-      "Canada": "CA",
-      "Australia": "AU",
-      "Japan": "JP",
-      "Switzerland": "CH",
-      "Nigeria": "NG",
+      Germany: "DE",
+      France: "FR",
+      Canada: "CA",
+      Australia: "AU",
+      Japan: "JP",
+      Switzerland: "CH",
+      Nigeria: "NG",
       "South Africa": "ZA",
     };
     if (!name) return "";
@@ -256,6 +256,7 @@ export default function WireTransferPage() {
     setOtpError(null);
 
     try {
+      const recipientName = (beneficiaryName || "").trim();
       const isDomestic = wireType === "DOMESTIC";
 
       // Normalize currencies
@@ -265,7 +266,7 @@ export default function WireTransferPage() {
       let payload: any;
 
       if (isDomestic) {
-        // Keep domestic flow as-is (you can adapt to your US handler as needed)
+        // Domestic payload
         payload = {
           rail: "usa",
           delivery: "WIRE",
@@ -273,8 +274,12 @@ export default function WireTransferPage() {
           amount: +parsedAmount.toFixed(2), // number (major units)
           currency: sendCur,
 
-          // Recipient block (for your UI + possible server aliases)
-          recipient: {
+          // ✅ top-level recipient string (required by backend normalizer)
+          recipient: recipientName,
+
+          // Recipient block (UI/aliases)
+          recipientDetails: {
+            // keeping details separate to avoid ambiguity with string `recipient`
             name: beneficiaryName,
             email: beneficiaryEmail,
             address: { street1: beneficiaryAddress },
@@ -296,7 +301,7 @@ export default function WireTransferPage() {
           routing: routingNumber,
           account: accountNumber,
 
-          feePayer: "OUR", // domestic wires often charged to sender
+          feePayer: "OUR",
           schedule: schedule === "NOW" ? { mode: "NOW", date: null } : { mode: "FUTURE", date: scheduleDate || null },
           reference,
           memo,
@@ -327,7 +332,7 @@ export default function WireTransferPage() {
           saveRecipient,
         };
       } else {
-        // INTERNATIONAL — match createInternationalWire’s expectations
+        // INTERNATIONAL — match createInternationalWire expectations
         payload = {
           // _normalizeIncoming needs fromAccount, currency, amount to compute amountCents
           fromAccount,
@@ -344,20 +349,20 @@ export default function WireTransferPage() {
             name: bankName,
             address: bankAddress || undefined,
             country: iso2(bankCountry),
-            swiftBic: swiftBic,     // camelCase key
-            ibanOrAcct: ibanOrAcct, // single accepted field
+            swiftBic: swiftBic,
+            ibanOrAcct: ibanOrAcct,
           },
 
-          // Beneficiary object (server sets beneficiary.name = t.recipient)
+          // Beneficiary object (server sets beneficiary.name = t.recipient on ledger)
           beneficiary: {
             type: beneficiaryType,
-            name: beneficiaryName,
+            name: recipientName,
             email: beneficiaryEmail || undefined,
             address: beneficiaryAddress || undefined,
           },
 
-          // CRITICAL: server ensures t.recipient length > 0
-          recipient: beneficiaryName,
+          // ✅ top-level recipient string (required by backend normalizer)
+          recipient: recipientName,
 
           // Optional intermediary in same key style
           intermediary: useIntermediary
@@ -379,7 +384,7 @@ export default function WireTransferPage() {
             estNetworkFees: feePayer === "OUR" ? estIntermediaryFees : 0,
           },
 
-          // Extras for your admin/receipt surfaces (optional)
+          // Extras for admin/receipt surfaces (optional)
           adminQueue: true,
           adminSurface: "wire_international",
           receiptMeta: {
@@ -718,7 +723,7 @@ export default function WireTransferPage() {
 
                   {/* Intermediary (optional) */}
                   <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-4">
-                    <label className="inline-flex items-center gap-3 text_sm">
+                    <label className="inline-flex items-center gap-3 text-sm">
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded-md accent-cyan-400"
@@ -1118,7 +1123,7 @@ function Sheet({
         className="absolute right-0 top-0 h-full w-full sm:w-[640px] bg-[#0F1622] border-l border-white/20 shadow-[0_12px_48px_rgba(0,0,0,0.7)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify_between px-6 py-5 border-b border-white/20">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/20">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
             aria-label="Close"
@@ -1159,7 +1164,7 @@ function OtpSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/20">
-          <h3 className="text-base font_semibold">Enter OTP to continue</h3>
+          <h3 className="text-base font-semibold">Enter OTP to continue</h3>
           <button
             aria-label="Close"
             className="h-10 w-10 rounded-2xl hover:bg-white/15 grid place-items-center transition-all"
@@ -1183,7 +1188,7 @@ function OtpSheet({
           </div>
           {error && <div className="text-rose-300 text-sm">{error}</div>}
           <div className="flex items-center justify-end gap-3">
-            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg_white/15 transition" onClick={onClose}>
+            <button className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 transition" onClick={onClose}>
               Cancel
             </button>
             <button
