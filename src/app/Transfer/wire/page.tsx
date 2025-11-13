@@ -427,7 +427,22 @@ export default function WireTransferPage() {
         };
       }
 
-      const res: any = await API.initiateTransfer(payload);
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
+      const endpoint = isDomestic ? 'usa' : 'wire_international';
+      const url = `${API_BASE}/transfers/${endpoint}`;
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.message || data.error || `HTTP ${r.status}`);
+      }
+
+      const res = await r.json();
 
       const referenceId =
         res?.referenceId ||
