@@ -1,4 +1,3 @@
-
 // app/Transfer/success/Success.tsx
 "use client";
 
@@ -108,7 +107,10 @@ export default function Success() {
           network: q("netFee") ? Number(q("netFee")!) : undefined,
           currency: q("feeCcy", q("ccy", "USD")!)!,
         },
-        sender: { accountName: q("fromName", "Checking")!, accountMasked: q("fromMasked", "••••9876") || undefined },
+        sender: {
+          accountName: q("fromName", "Checking")!,
+          accountMasked: q("fromMasked", "••••9876") || undefined,
+        },
         recipient: {
           name: q("to", typeQ === "deposit" ? "Your account" : "Recipient")!,
           accountMasked: q("acct") || undefined,
@@ -123,10 +125,18 @@ export default function Success() {
           speed: (q("speed") as Speed) || undefined,
           traceId: q("trace") || undefined,
           confirmations: params.get("tx")
-            ? { required: Number(q("reqConf", "2")), current: Number(q("curConf", "2")), txHash: q("tx")!, explorerUrl: q("exp") || undefined }
+            ? {
+                required: Number(q("reqConf", "2")),
+                current: Number(q("curConf", "2")),
+                txHash: q("tx")!,
+                explorerUrl: q("exp") || undefined,
+              }
             : undefined,
         },
-        referenceId: q("ref", "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase())!,
+        referenceId: q(
+          "ref",
+          "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase()
+        )!,
         note: q("note") || undefined,
         converted: params.get("conv")
           ? {
@@ -147,8 +157,14 @@ export default function Success() {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (parsed && parsed.referenceId && parsed.amount?.value) {
-          // Make sure success status shows
-          return { ...parsed, status: "completed" } as TransferSummary;
+          // Ensure required nested objects exist
+          const safe: TransferSummary = {
+            ...parsed,
+            status: "completed",
+            sender: parsed.sender || { accountName: "Checking", accountMasked: "••••9876" },
+            recipient: parsed.recipient || { name: "Recipient", accountMasked: "••••1234" },
+          };
+          return safe;
         }
       } catch {}
       return null;
@@ -182,13 +198,21 @@ export default function Success() {
       return null;
     })();
 
-    setSummary(fromQuery || fromLedgerByRef || fromLastTransfer || fromLedgerLatest || makeBasicFallback());
+    setSummary(
+      fromQuery ||
+        fromLedgerByRef ||
+        fromLastTransfer ||
+        fromLedgerLatest ||
+        makeBasicFallback()
+    );
   }, [params]);
 
   if (!summary) return null;
 
   const header = headerTitle(summary);
-  const meta = `${new Date(summary.executedAt || summary.createdAt).toLocaleString()} • Ref: ${summary.referenceId}`;
+  const meta = `${new Date(
+    summary.executedAt || summary.createdAt
+  ).toLocaleString()} • Ref: ${summary.referenceId}`;
 
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
@@ -210,9 +234,20 @@ export default function Success() {
 
           {/* Primary */}
           <div className="mt-6 grid sm:grid-cols-2 gap-4">
-            <Info label={summary.type === "deposit" ? "Amount credited" : "Amount sent"} value={currencyFmt(summary.amount.value, summary.amount.currency)} />
-            <Info label={summary.type === "deposit" ? "Credited to" : "Recipient"} value={recipientLabel(summary)} />
-            <Info label="From account" value={`${summary.sender.accountName}${summary.sender.accountMasked ? ` ${summary.sender.accountMasked}` : ""}`} />
+            <Info
+              label={summary.type === "deposit" ? "Amount credited" : "Amount sent"}
+              value={currencyFmt(summary.amount.value, summary.amount.currency)}
+            />
+            <Info
+              label={summary.type === "deposit" ? "Credited to" : "Recipient"}
+              value={recipientLabel(summary)}
+            />
+            <Info
+              label="From account"
+              value={`${summary.sender.accountName}${
+                summary.sender.accountMasked ? ` ${summary.sender.accountMasked}` : ""
+              }`}
+            />
             <Info label="Rail" value={railLabel(summary)} />
           </div>
 
@@ -221,7 +256,10 @@ export default function Success() {
             {summary.converted && (
               <Info
                 label="Conversion"
-                value={`${currencyFmt(summary.converted.value, summary.converted.currency)} ${
+                value={`${currencyFmt(
+                  summary.converted.value,
+                  summary.converted.currency
+                )} ${
                   summary.converted.rate ? `• Rate ${summary.converted.rate}` : ""
                 }`}
               />
@@ -230,7 +268,13 @@ export default function Success() {
               label="Fees"
               value={
                 summary.fees.network
-                  ? `App ${currencyFmt(summary.fees.app, summary.fees.currency)} • Network ${currencyFmt(summary.fees.network, summary.fees.currency)}`
+                  ? `App ${currencyFmt(
+                      summary.fees.app,
+                      summary.fees.currency
+                    )} • Network ${currencyFmt(
+                      summary.fees.network,
+                      summary.fees.currency
+                    )}`
                   : `${currencyFmt(summary.fees.app, summary.fees.currency)}`
               }
             />
@@ -242,7 +286,9 @@ export default function Success() {
           {/* Actions */}
           <div className="mt-8 flex flex-wrap gap-3">
             {/* Hook up when your receipt endpoint is ready */}
-            <button className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20">Download receipt</button>
+            <button className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20">
+              Download receipt
+            </button>
             <button
               className="ml-auto px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20 flex items-center gap-2"
               onClick={() => router.push("/dashboard/dashboard")}
@@ -269,27 +315,55 @@ function Info({ label, value }: { label: string; value?: string }) {
 
 function railLabel(d: TransferSummary) {
   switch (d.type) {
-    case "ach": return `ACH${d.railInfo?.speed === "same_day" ? " (Same-Day)" : " (Standard)"}`;
-    case "ach_same_day": return "ACH (Same-Day)";
-    case "wire_domestic": return "Wire (Domestic)";
-    case "wire_international": return "SWIFT / International";
-    case "crypto": return `Crypto${d.recipient.network ? ` (${d.recipient.network})` : ""}`;
-    case "billpay": return "Bill Pay";
-    case "deposit": return "Deposit";
-    case "paypal": return "PayPal";
-    case "revolut": return "Revolut";
-    case "venmo": return "Venmo";
-    case "zelle": return "Zelle";
-    case "cashapp": return "Cash App";
-    case "alipay": return "Alipay";
-    default: return "Transfer";
+    case "ach":
+      return `ACH${
+        d.railInfo?.speed === "same_day" ? " (Same-Day)" : " (Standard)"
+      }`;
+    case "ach_same_day":
+      return "ACH (Same-Day)";
+    case "wire_domestic":
+      return "Wire (Domestic)";
+    case "wire_international":
+      return "SWIFT / International";
+    case "crypto": {
+      // 🔐 SAFE: recipient may be missing on older saved objects
+      const net =
+        d.recipient?.network ||
+        (d.railInfo as any)?.network ||
+        undefined;
+      return `Crypto${net ? ` (${net})` : ""}`;
+    }
+    case "billpay":
+      return "Bill Pay";
+    case "deposit":
+      return "Deposit";
+    case "paypal":
+      return "PayPal";
+    case "revolut":
+      return "Revolut";
+    case "venmo":
+      return "Venmo";
+    case "zelle":
+      return "Zelle";
+    case "cashapp":
+      return "Cash App";
+    case "alipay":
+      return "Alipay";
+    default:
+      return "Transfer";
   }
 }
 
 function recipientLabel(d: TransferSummary) {
-  if (d.type === "deposit") return `${d.sender.accountName}${d.sender.accountMasked ? ` ${d.sender.accountMasked}` : ""}`;
-  const acct = d.recipient.accountMasked ? ` • ${d.recipient.accountMasked}` : "";
-  return `${d.recipient.name}${acct}`;
+  // 🔐 also guard recipient so we don't blow up on missing object
+  const r = d.recipient || { name: "Recipient" };
+  if (d.type === "deposit") {
+    return `${d.sender.accountName}${
+      d.sender.accountMasked ? ` ${d.sender.accountMasked}` : ""
+    }`;
+  }
+  const acct = r.accountMasked ? ` • ${r.accountMasked}` : "";
+  return `${r.name}${acct}`;
 }
 
 function headerTitle(d: TransferSummary) {
@@ -312,7 +386,11 @@ function RailExtras({ data }: { data: TransferSummary }) {
       <div className="mt-4 text-sm text-white/70 flex items-center gap-2">
         Tx Hash: <span className="text-white break-all">{c.txHash}</span>
         {c.explorerUrl && (
-          <a href={c.explorerUrl} target="_blank" className="inline-flex items-center gap-1 text-[#00E0FF]">
+          <a
+            href={c.explorerUrl}
+            target="_blank"
+            className="inline-flex items-center gap-1 text-[#00E0FF]"
+          >
             View on explorer <ExternalLink size={14} />
           </a>
         )}
@@ -357,7 +435,10 @@ function normalizeLedgerToSummary(m: any): TransferSummary {
     sender,
     recipient: {
       name: rName,
-      accountMasked: m?.recipient?.accountMasked || m?.payee?.accountRef || m?.recipientAccountMasked,
+      accountMasked:
+        m?.recipient?.accountMasked ||
+        m?.payee?.accountRef ||
+        m?.recipientAccountMasked,
       bankName: m?.recipient?.bankName || m?.bankName,
       country: m?.recipient?.country || m?.bankCountry,
       swift: m?.recipient?.swift || m?.swiftBic,
@@ -366,7 +447,10 @@ function normalizeLedgerToSummary(m: any): TransferSummary {
       network: m?.recipient?.network,
     },
     railInfo: m.railInfo,
-    referenceId: m.referenceId || m.id || "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+    referenceId:
+      m.referenceId ||
+      m.id ||
+      "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase(),
     note: m.memo || m.note,
   };
 
@@ -384,6 +468,7 @@ function makeBasicFallback(): TransferSummary {
     fees: { app: 0, currency: "USD" },
     sender: { accountName: "Checking", accountMasked: "••••9876" },
     recipient: { name: "Recipient", accountMasked: "••••1234" },
-    referenceId: "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+    referenceId:
+      "TX_" + Math.random().toString(36).slice(2, 8).toUpperCase(),
   };
 }
