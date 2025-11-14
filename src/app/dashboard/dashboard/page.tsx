@@ -78,8 +78,8 @@ type TxnRowUnified = {
   account: "Checking" | "Savings" | "Crypto" | "Unknown";
   rail?: string;
   category: string;
-  title: string;           // human name/handle — never provider
-  subtitle?: string;       // handle/email/phone or Acct••••
+  title: string; // human name/handle — never provider
+  subtitle?: string; // handle/email/phone or Acct••••
   direction: "sent" | "received";
   note?: string;
   ref?: string;
@@ -98,7 +98,9 @@ type TxnRowUnified = {
 function formatAddress(a?: Address) {
   if (!a) return "";
   const cityState = [a.city, a.state].filter(Boolean).join(", ");
-  return [a.street1, a.street2, cityState, a.postalCode, a.country].filter(Boolean).join(" • ");
+  return [a.street1, a.street2, cityState, a.postalCode, a.country]
+    .filter(Boolean)
+    .join(" • ");
 }
 
 function num(v: any, def = 0): number {
@@ -125,9 +127,11 @@ function firstNonEmpty(...vals: any[]): string | undefined {
 }
 
 const uuid = () =>
-  (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function"
+  typeof crypto !== "undefined" &&
+  typeof (crypto as any).randomUUID === "function"
     ? (crypto as any).randomUUID()
-    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+    : Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2);
 
 /* -------------------------------------------------------------------------- */
 /* Rail beautifier + provider detection                                       */
@@ -291,7 +295,11 @@ function pickParty(input: any, direction: "sent" | "received") {
 function normalizeTx(input: any): TxnRowUnified | null {
   // 1) Amount / direction
   const rawAmt =
-    input?.amount?.value ?? input?.amountValue ?? input?.amount ?? input?.meta?.amount ?? 0;
+    input?.amount?.value ??
+    input?.amountValue ??
+    input?.amount ??
+    input?.meta?.amount ??
+    0;
   const amt = num(rawAmt);
   let direction: "sent" | "received";
   if (typeof input?.direction === "string") {
@@ -300,10 +308,13 @@ function normalizeTx(input: any): TxnRowUnified | null {
   } else {
     direction = amt < 0 ? "sent" : "received";
   }
-  const signed = direction === "sent" ? -Math.abs(Math.abs(amt)) : Math.abs(Math.abs(amt));
+  const signed =
+    direction === "sent" ? -Math.abs(Math.abs(amt)) : Math.abs(Math.abs(amt));
 
   // 2) Rail
-  const rail = (input?.rail as string | undefined) || (input?.meta?.rail as string | undefined);
+  const rail =
+    (input?.rail as string | undefined) ||
+    (input?.meta?.rail as string | undefined);
 
   // 3) Counterparty (direction-aware)
   const { partyName, partyHandle, bankLast4 } = pickParty(input, direction);
@@ -326,8 +337,10 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const last4 = bankLast4 ? String(bankLast4).slice(-4) : undefined;
 
   // 4) Title (never provider/rail)
-  const merchantRaw = (input?.merchant && String(input.merchant).trim()) || undefined;
-  const merchantHuman = merchantRaw && !isProviderLabel(merchantRaw) ? merchantRaw : undefined;
+  const merchantRaw =
+    (input?.merchant && String(input.merchant).trim()) || undefined;
+  const merchantHuman =
+    merchantRaw && !isProviderLabel(merchantRaw) ? merchantRaw : undefined;
 
   const title =
     nameHuman ||
@@ -346,16 +359,23 @@ function normalizeTx(input: any): TxnRowUnified | null {
 
   if (subtitle && subtitle.trim().toLowerCase() === title.trim().toLowerCase()) {
     // avoid duplicates like when title is the handle
-    subtitle = railPretty && railPretty.toLowerCase() !== title.toLowerCase() ? railPretty : undefined;
+    subtitle =
+      railPretty && railPretty.toLowerCase() !== title.toLowerCase()
+        ? railPretty
+        : undefined;
   }
 
   // 6) Account kind
   const account: TxnRowUnified["account"] =
     (input?.accountType as any) ||
     (rail &&
-    ["crypto", "crypto_buy", "crypto_swap", "crypto_send", "crypto_receive"].includes(
-      String(rail).toLowerCase()
-    )
+    [
+      "crypto",
+      "crypto_buy",
+      "crypto_swap",
+      "crypto_send",
+      "crypto_receive",
+    ].includes(String(rail).toLowerCase())
       ? "Crypto"
       : "Checking");
 
@@ -384,7 +404,10 @@ function normalizeTx(input: any): TxnRowUnified | null {
 
   // 9) Date / ID
   const date =
-    input?.date || input?.createdAt || input?.meta?.createdAt || new Date().toISOString();
+    input?.date ||
+    input?.createdAt ||
+    input?.meta?.createdAt ||
+    new Date().toISOString();
   const id = String(input?.id || input?._id || input?.referenceId || uuid());
 
   return {
@@ -523,10 +546,13 @@ export default function DashboardPage() {
         setSavingsBalance(Number(user.balances?.savings || 0));
 
         const baseFromMirror = Number(user?.balances?.cryptoBTC ?? 0);
-        const baseFromHoldings = Number(user?.balances?.cryptoHoldings?.bitcoin?.amount ?? 0);
+        const baseFromHoldings = Number(
+          user?.balances?.cryptoHoldings?.bitcoin?.amount ?? 0
+        );
         const legacyUsd = Number(user?.balances?.cryptoUSD ?? 0);
         const legacyPx = Number((user?.balances?.btcPrice as any) ?? 0);
-        const baseFromLegacy = legacyUsd > 0 && legacyPx > 0 ? legacyUsd / legacyPx : 0;
+        const baseFromLegacy =
+          legacyUsd > 0 && legacyPx > 0 ? legacyUsd / legacyPx : 0;
         setBtcAmountBase(baseFromMirror || baseFromHoldings || baseFromLegacy || 0);
 
         const accts = user.accounts as AccountsShape;
@@ -541,8 +567,12 @@ export default function DashboardPage() {
         try {
           const tx = await request<{ items: any[] }>("/users/me/txns");
           const raw = Array.isArray(tx?.items) ? tx.items : [];
-          const normalized = raw.map((row) => normalizeTx(row)).filter(Boolean) as TxnRowUnified[];
-          normalized.sort((a, b) => +new Date(b.date) - +new Date(a.date));
+          const normalized = raw
+            .map((row) => normalizeTx(row))
+            .filter(Boolean) as TxnRowUnified[];
+          normalized.sort(
+            (a, b) => +new Date(b.date) - +new Date(a.date)
+          );
           setTxns(normalized);
         } catch (e) {
           console.warn("txns fetch error", e);
@@ -550,13 +580,16 @@ export default function DashboardPage() {
 
         // Notifications
         try {
-          const acts = await request<{ items: any[] }>("/users/me/activities");
+          const acts = await request<{ items: any[] }>(
+            "/users/me/activities"
+          );
           const list = Array.isArray(acts?.items) ? acts.items : [];
           if (list.length) {
             setActivities(
               list.sort(
                 (a, b) =>
-                  new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+                  new Date(b.createdAt || 0).getTime() -
+                  new Date(a.createdAt || 0).getTime()
               )
             );
           }
@@ -567,7 +600,10 @@ export default function DashboardPage() {
     })();
   }, [router]);
 
-  const totalFiat = useMemo(() => checkingBalance + savingsBalance, [checkingBalance, savingsBalance]);
+  const totalFiat = useMemo(
+    () => checkingBalance + savingsBalance,
+    [checkingBalance, savingsBalance]
+  );
 
   const { perAsset, loading: priceLoading } = useLiveCrypto({
     ids: ["bitcoin"],
@@ -621,14 +657,20 @@ export default function DashboardPage() {
     setAvatarUploading(true);
     try {
       // Upload to Cloudinary (unsigned preset from env)
-      const url = await uploadAvatarUnsigned(file, { folder: "horizon/avatars" });
+      const url = await uploadAvatarUnsigned(file, {
+        folder: "horizon/avatars",
+      });
       // Persist on backend
       await saveAvatar(url); // PATCH /users/me/profile { avatarUrl: url }
       // Update UI
       setProfileAvatar(url);
       // Optional: let the Nav (or any listener) know immediately
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("horizon:profile-updated", { detail: { avatarUrl: url } }));
+        window.dispatchEvent(
+          new CustomEvent("horizon:profile-updated", {
+            detail: { avatarUrl: url },
+          })
+        );
         try {
           localStorage.setItem("horizon_avatar_url", url);
         } catch {}
@@ -651,7 +693,11 @@ export default function DashboardPage() {
       await API.updateProfile({ avatarUrl: "" });
       setProfileAvatar(null);
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("horizon:profile-updated", { detail: { avatarUrl: "" } }));
+        window.dispatchEvent(
+          new CustomEvent("horizon:profile-updated", {
+            detail: { avatarUrl: "" },
+          })
+        );
         try {
           localStorage.removeItem("horizon_avatar_url");
         } catch {}
@@ -693,6 +739,30 @@ export default function DashboardPage() {
     }
   }
 
+  // 🔗 When a user taps a transaction, deep-link into /Transfer/success
+  function handleOpenTxn(t: TxnRowUnified) {
+    const ref = t.ref || t.id;
+
+    if (typeof window !== "undefined" && ref) {
+      try {
+        const payload = {
+          referenceId: ref,
+          amount: { value: Math.abs(t.amount), currency: "USD" },
+          sender: { accountName: t.account },
+          recipient: { name: t.title },
+          note: t.note,
+        };
+        localStorage.setItem("last_transfer", JSON.stringify(payload));
+      } catch {
+        // swallow; Success page has its own fallbacks
+      }
+    }
+
+    const params = new URLSearchParams();
+    if (ref) params.set("ref", ref);
+    router.push(`/Transfer/success?${params.toString()}`);
+  }
+
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
       <Nav
@@ -716,12 +786,18 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm text-white/60">Welcome back,</div>
-                <div className="text-2xl font-semibold mt-1">{userName || "User"}</div>
+                <div className="text-2xl font-semibold mt-1">
+                  {userName || "User"}
+                </div>
               </div>
               <div className="h-10 w-10 rounded-full overflow-hidden bg-white/10 border border-white/20">
                 {profileAvatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={profileAvatar} alt="avatar" className="h-full w-full object-cover" />
+                  <img
+                    src={profileAvatar}
+                    alt="avatar"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <User size={20} className="text-white/50 m-auto mt-2.5" />
                 )}
@@ -731,7 +807,9 @@ export default function DashboardPage() {
             <div className="text-5xl font-bold mt-1 tracking-tight">
               ${totalAssets.toLocaleString()}
             </div>
-            <div className="text-xs text-white/50 mt-2">All accounts including crypto</div>
+            <div className="text-xs text-white/50 mt-2">
+              All accounts including crypto
+            </div>
             <div className="flex gap-4 text-xs text-white/60 mt-3">
               <span>Fiat: ${totalFiat.toLocaleString()}</span>
               <span>•</span>
@@ -766,7 +844,7 @@ export default function DashboardPage() {
               balance={checkingBalance}
               color="#00E0FF"
               icon={<Wallet size={24} />}
-              subtitle={`Ending in ${cardLast4 || '••••'}`}
+              subtitle={`Ending in ${cardLast4 || "••••"}`}
               onClick={openCardsManager}
             />
             <AccountCard
@@ -796,10 +874,26 @@ export default function DashboardPage() {
       <section className="container-x mt-10">
         <div className="text-sm text-white/70 mb-4">Quick actions</div>
         <div className="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory">
-          <ActionTile icon={<ArrowUpRight size={28} />} label="Transfer" onClick={openQuickTransfer} />
-          <ActionTile icon={<Plus size={28} />} label="Add money" onClick={openQuickAddMoney} />
-          <ActionTile icon={<CreditCard size={28} />} label="Pay bills" onClick={openPayBills} />
-          <ActionTile icon={<BarChart3 size={28} />} label="Insights" onClick={openInsights} />
+          <ActionTile
+            icon={<ArrowUpRight size={28} />}
+            label="Transfer"
+            onClick={openQuickTransfer}
+          />
+          <ActionTile
+            icon={<Plus size={28} />}
+            label="Add money"
+            onClick={openQuickAddMoney}
+          />
+          <ActionTile
+            icon={<CreditCard size={28} />}
+            label="Pay bills"
+            onClick={openPayBills}
+          />
+          <ActionTile
+            icon={<BarChart3 size={28} />}
+            label="Insights"
+            onClick={openInsights}
+          />
         </div>
       </section>
 
@@ -831,7 +925,11 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4">
-            <InsightStat label="Sent (this month)" value={fmtMoney(monthSentRecv.sent)} trend="—" />
+            <InsightStat
+              label="Sent (this month)"
+              value={fmtMoney(monthSentRecv.sent)}
+              trend="—"
+            />
             <InsightStat
               label="Received (this month)"
               value={fmtMoney(monthSentRecv.received)}
@@ -846,8 +944,16 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4 mt-6">
-            <StatCard k="YTD Sent" v={fmtMoney(ytd.sent)} sub="Year-to-date total outflows" />
-            <StatCard k="YTD Received" v={fmtMoney(ytd.received)} sub="Year-to-date total inflows" />
+            <StatCard
+              k="YTD Sent"
+              v={fmtMoney(ytd.sent)}
+              sub="Year-to-date total outflows"
+            />
+            <StatCard
+              k="YTD Received"
+              v={fmtMoney(ytd.received)}
+              sub="Year-to-date total inflows"
+            />
           </div>
 
           {/* Placeholder mini chart */}
@@ -874,9 +980,17 @@ export default function DashboardPage() {
         </div>
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] divide-y divide-white/10 shadow-2xl ring-1 ring-white/5">
           {txns.slice(0, 5).length === 0 ? (
-            <div className="p-8 text-center text-white/70">No transactions yet.</div>
+            <div className="p-8 text-center text-white/70">
+              No transactions yet.
+            </div>
           ) : (
-            txns.slice(0, 5).map((t) => <TxnRow key={t.id} t={t} />)
+            txns.slice(0, 5).map((t) => (
+              <TxnRow
+                key={t.id}
+                t={t}
+                onClick={() => handleOpenTxn(t)}
+              />
+            ))
           )}
         </div>
       </section>
@@ -892,7 +1006,11 @@ export default function DashboardPage() {
 
       {/* ----------------------------- MODALS ----------------------------- */}
       {/* Modals remain unchanged as per instructions */}
-      <Sheet open={showAccounts} onClose={() => setShowAccounts(false)} title="Accounts">
+      <Sheet
+        open={showAccounts}
+        onClose={() => setShowAccounts(false)}
+        title="Accounts"
+      >
         <div className="space-y-4">
           <InfoRow
             icon={<Wallet size={18} />}
@@ -904,18 +1022,34 @@ export default function DashboardPage() {
             label="Savings"
             value={`$${savingsBalance.toLocaleString()}`}
           />
-          <InfoRow icon={<Bitcoin size={18} />} label="Crypto" value={`$${liveUsd.toLocaleString()}`} />
+          <InfoRow
+            icon={<Bitcoin size={18} />}
+            label="Crypto"
+            value={`$${liveUsd.toLocaleString()}`}
+          />
 
           <div className="h-px bg-white/20 my-3" />
 
           <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-5">
-            <div className="text-base font-semibold mb-3">Account details</div>
-            <KeyVal k="Routing number" v={routingNumber || "—"} />
-            <KeyVal k="Account number" v={maskAccount(accountNumber) || "—"} />
+            <div className="text-base font-semibold mb-3">
+              Account details
+            </div>
+            <KeyVal
+              k="Routing number"
+              v={routingNumber || "—"}
+            />
+            <KeyVal
+              k="Account number"
+              v={maskAccount(accountNumber) || "—"}
+            />
             <KeyVal
               k="Virtual card"
               v={
-                cardNumber ? maskCard(cardNumber) : cardLast4 ? `•••• •••• •••• ${cardLast4}` : "—"
+                cardNumber
+                  ? maskCard(cardNumber)
+                  : cardLast4
+                  ? `•••• •••• •••• ${cardLast4}`
+                  : "—"
               }
             />
           </div>
@@ -931,58 +1065,109 @@ export default function DashboardPage() {
         </div>
       </Sheet>
 
-      <Sheet open={showTransactions} onClose={() => setShowTransactions(false)} title="Transactions">
-        <TransactionsPanel txns={txns} />
+      <Sheet
+        open={showTransactions}
+        onClose={() => setShowTransactions(false)}
+        title="Transactions"
+      >
+        <TransactionsPanel
+          txns={txns}
+          onOpenTxn={handleOpenTxn}
+        />
       </Sheet>
 
-      <Sheet open={showAnalytics} onClose={() => setShowAnalytics(false)} title="Spending Insights">
+      <Sheet
+        open={showAnalytics}
+        onClose={() => setShowAnalytics(false)}
+        title="Spending Insights"
+      >
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="space-y-5">
-            <StatCard k="This month Sent" v={fmtMoney(monthSentRecv.sent)} sub="Outflows this month" />
+            <StatCard
+              k="This month Sent"
+              v={fmtMoney(monthSentRecv.sent)}
+              sub="Outflows this month"
+            />
             <StatCard
               k="This month Received"
               v={fmtMoney(monthSentRecv.received)}
               sub="Inflows this month"
             />
-            <StatCard k="YTD Net" v={fmtMoney(ytd.received - ytd.sent)} sub="Income − Spend" />
+            <StatCard
+              k="YTD Net"
+              v={fmtMoney(ytd.received - ytd.sent)}
+              sub="Income − Spend"
+            />
             <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-              <div className="text-base text-white/80 mb-3 font-semibold">Top categories</div>
+              <div className="text-base text-white/80 mb-3 font-semibold">
+                Top categories
+              </div>
               <ul className="space-y-3 text-base text-white/60">
                 <li>Transfer</li>
               </ul>
             </div>
           </div>
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">Monthly trend</div>
-            <div className="text-white/60 text-sm">Charts coming soon.</div>
+            <div className="text-base text-white/80 mb-4 font-semibold">
+              Monthly trend
+            </div>
+            <div className="text-white/60 text-sm">
+              Charts coming soon.
+            </div>
           </div>
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">Rail split</div>
-            <div className="text-white/60 text-sm">Breakdown by PayPal / Zelle / ACH coming soon.</div>
+            <div className="text-base text-white/80 mb-4 font-semibold">
+              Rail split
+            </div>
+            <div className="text-white/60 text-sm">
+              Breakdown by PayPal / Zelle / ACH coming soon.
+            </div>
           </div>
         </div>
       </Sheet>
 
-      <Sheet open={showSecurity} onClose={() => setShowSecurity(false)} title="Security">
+      <Sheet
+        open={showSecurity}
+        onClose={() => setShowSecurity(false)}
+        title="Security"
+      >
         <div className="space-y-4">
           <Row label="App PIN" action="Change" icon={<Lock size={18} />} />
-          <Row label="Quick sign-in" action="Manage" icon={<Shield size={18} />} />
-          <Row label="Devices" action="View" icon={<Shield size={18} />} />
+          <Row
+            label="Quick sign-in"
+            action="Manage"
+            icon={<Shield size={18} />}
+          />
+          <Row
+            label="Devices"
+            action="View"
+            icon={<Shield size={18} />}
+          />
         </div>
       </Sheet>
 
-      <Sheet open={showSettings} onClose={() => setShowSettings(false)} title="Settings">
+      <Sheet
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        title="Settings"
+      >
         <div className="grid lg:grid-cols-[320px,1fr] gap-8">
           {/* Profile quick card */}
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">Profile</div>
+            <div className="text-base text-white/80 mb-4 font-semibold">
+              Profile
+            </div>
 
             <div className="flex items-center gap-4">
               <div className="relative">
                 <div className="h-24 w-24 rounded-2xl overflow-hidden bg-white/15 border border-white/20 grid place-items-center shadow-md">
                   {profileAvatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={profileAvatar} alt="avatar" className="h-full w-full object-cover" />
+                    <img
+                      src={profileAvatar}
+                      alt="avatar"
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
                     <User size={28} className="text-white/70" />
                   )}
@@ -990,11 +1175,19 @@ export default function DashboardPage() {
 
                 {/* Upload button / spinner */}
                 <button
-                  onClick={avatarUploading ? undefined : handlePickAvatar}
+                  onClick={
+                    avatarUploading ? undefined : handlePickAvatar
+                  }
                   className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
-                  title={avatarUploading ? "Uploading…" : "Change photo"}
+                  title={
+                    avatarUploading ? "Uploading…" : "Change photo"
+                  }
                 >
-                  {avatarUploading ? <Loader2 className="animate-spin" size={18} /> : <Camera size={18} />}
+                  {avatarUploading ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    <Camera size={18} />
+                  )}
                 </button>
               </div>
 
@@ -1002,7 +1195,9 @@ export default function DashboardPage() {
                 <div className="font-semibold">
                   {profileFirst || "—"} {profileLast}
                 </div>
-                <div className="text-white/70">{profileEmail || "you@example.com"}</div>
+                <div className="text-white/70">
+                  {profileEmail || "you@example.com"}
+                </div>
               </div>
             </div>
 
@@ -1023,7 +1218,9 @@ export default function DashboardPage() {
               </button>
             )}
             {avatarError && (
-              <div className="mt-3 text-sm text-rose-300">{avatarError}</div>
+              <div className="mt-3 text-sm text-rose-300">
+                {avatarError}
+              </div>
             )}
 
             <div className="h-px bg-white/20 my-5" />
@@ -1128,14 +1325,15 @@ export default function DashboardPage() {
               </div>
             </form>
           </div>
-
-        
-      
         </div>
       </Sheet>
 
       {/* Notifications */}
-      <Sheet open={showNotifications} onClose={() => setShowNotifications(false)} title="Notifications">
+      <Sheet
+        open={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        title="Notifications"
+      >
         <NotificationsPanel activities={activities} />
       </Sheet>
     </main>
@@ -1165,13 +1363,20 @@ function AccountCard({
       className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
-        <div className="h-10 w-10 rounded-full border border-white/10 grid place-items-center" style={{ color }}>
+        <div
+          className="h-10 w-10 rounded-full border border-white/10 grid place-items-center"
+          style={{ color }}
+        >
           {icon}
         </div>
         {label}
       </div>
-      <div className="text-3xl font-bold mt-4">${balance.toLocaleString()}</div>
-      {subtitle && <div className="text-xs text-white/50 mt-2">{subtitle}</div>}
+      <div className="text-3xl font-bold mt-4">
+        ${balance.toLocaleString()}
+      </div>
+      {subtitle && (
+        <div className="text-xs text-white/50 mt-2">{subtitle}</div>
+      )}
     </button>
   );
 }
@@ -1199,8 +1404,7 @@ function CryptoCard({
   onClick?: () => void;
 }) {
   // Normalise the optional prop into a local value
-  const change24hValue =
-    typeof change24h === "number" ? change24h : null;
+  const change24hValue = typeof change24h === "number" ? change24h : null;
 
   const changeTone =
     change24hValue !== null
@@ -1222,7 +1426,10 @@ function CryptoCard({
       className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
-        <div className="h-10 w-10 rounded-full border border-white/10 grid place-items-center" style={{ color }}>
+        <div
+          className="h-10 w-10 rounded-full border border-white/10 grid place-items-center"
+          style={{ color }}
+        >
           {icon}
         </div>
         {label}
@@ -1236,18 +1443,25 @@ function CryptoCard({
         <span className="font-medium">
           {btcAmount ? btcAmount.toFixed(8) : "0.00000000"} BTC
         </span>
-        <span>{loading ? "Updating…" : `@ $${price.toLocaleString()}`}</span>
+        <span>
+          {loading ? "Updating…" : `@ $${price.toLocaleString()}`}
+        </span>
 
         {change24hValue !== null && (
           <span className={`${changeTone} mt-0.5`}>
-            {change24hValue >= 0 ? "▲" : "▼"} {change24hValue.toFixed(2)}% 24h
+            {change24hValue >= 0 ? "▲" : "▼"}{" "}
+            {change24hValue.toFixed(2)}% 24h
           </span>
         )}
       </div>
 
       {/* Placeholder sparkline */}
       <div className="mt-4 h-8 w-full">
-        <svg className="w-full h-full" viewBox="0 0 100 20" preserveAspectRatio="none">
+        <svg
+          className="w-full h-full"
+          viewBox="0 0 100 20"
+          preserveAspectRatio="none"
+        >
           <path
             d="M0 18 Q25 10, 50 15 T100 5"
             fill="none"
@@ -1261,7 +1475,15 @@ function CryptoCard({
   );
 }
 
-function ActionTile({ icon, label, onClick }: { icon: ReactNode; label: string; onClick?: () => void }) {
+function ActionTile({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -1275,7 +1497,15 @@ function ActionTile({ icon, label, onClick }: { icon: ReactNode; label: string; 
   );
 }
 
-function StatCard({ k, v, sub }: { k: string; v: string; sub?: string }) {
+function StatCard({
+  k,
+  v,
+  sub,
+}: {
+  k: string;
+  v: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md shadow-2xl ring-1 ring-white/5">
       <div className="text-xs text-white/60">{k}</div>
@@ -1302,7 +1532,11 @@ function InsightStat({
       <div className="text-lg font-semibold mt-2">{value}</div>
       <div
         className={`text-xs mt-2 ${
-          positive === undefined ? "text-white/50" : positive ? "text-emerald-400" : "text-rose-400"
+          positive === undefined
+            ? "text-white/50"
+            : positive
+            ? "text-emerald-400"
+            : "text-rose-400"
         }`}
       >
         {trend}
@@ -1311,13 +1545,23 @@ function InsightStat({
   );
 }
 
-function InfoRow({ icon, label, value }: { icon?: ReactNode; label: string; value?: string }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon?: ReactNode;
+  label: string;
+  value?: string;
+}) {
   return (
     <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-5 flex items-center justify-between backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.3)]">
       <div className="flex items-center gap-3 text-base text-white/90">
         {icon} {label}
       </div>
-      {value && <div className="text-xl font-bold">{value}</div>}
+      {value && (
+        <div className="text-xl font-bold">{value}</div>
+      )}
     </div>
   );
 }
@@ -1331,13 +1575,25 @@ function KeyVal({ k, v }: { k: string; v: string }) {
   );
 }
 
-function Row({ label, action, icon }: { label: string; action?: string; icon?: ReactNode }) {
+function Row({
+  label,
+  action,
+  icon,
+}: {
+  label: string;
+  action?: string;
+  icon?: ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between rounded-2xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.3)]">
       <div className="flex items-center gap-3 text-base text-white/90">
         {icon} {label}
       </div>
-      {action && <button className="text-base text-[#00E0FF] hover:underline transition-all">{action}</button>}
+      {action && (
+        <button className="text-base text-[#00E0FF] hover:underline transition-all">
+          {action}
+        </button>
+      )}
     </div>
   );
 }
@@ -1371,7 +1627,9 @@ function Sheet({
             <X size={20} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto h-[calc(100%-64px)]">{children}</div>
+        <div className="p-6 overflow-y-auto h-[calc(100%-64px)]">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -1396,7 +1654,11 @@ function LabeledInput({
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <input
           type={type || "text"}
           value={value}
@@ -1414,10 +1676,19 @@ function LabeledInput({
 /* -------------------------- Transactions Panel -------------------------- */
 
 function fmtMoney(n: number) {
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  return n.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+  });
 }
 
-function TxnRow({ t }: { t: TxnRowUnified }) {
+function TxnRow({
+  t,
+  onClick,
+}: {
+  t: TxnRowUnified;
+  onClick?: () => void;
+}) {
   const isIncome = t.amount > 0;
   const date = new Date(t.date);
   const railLabel = prettyRail(t.rail) ?? "Transfer";
@@ -1425,7 +1696,9 @@ function TxnRow({ t }: { t: TxnRowUnified }) {
   // Hard guard: never show provider as title; use subtitle or "Unknown"
   const rawTitle = (t.title || "").trim();
   const titleText =
-    !rawTitle || isProviderLabel(rawTitle) ? t.subtitle || "Unknown" : rawTitle;
+    !rawTitle || isProviderLabel(rawTitle)
+      ? t.subtitle || "Unknown"
+      : rawTitle;
 
   // Hide duplicate subtitle if it equals title (case-insensitive)
   const showSubtitle =
@@ -1433,7 +1706,11 @@ function TxnRow({ t }: { t: TxnRowUnified }) {
     t.subtitle.trim().toLowerCase() !== titleText.trim().toLowerCase();
 
   return (
-    <div className="flex items-center justify-between px-6 py-5 hover:bg-white/[0.04] transition-all">
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left flex items-center justify-between px-6 py-5 hover:bg-white/[0.04] transition-all"
+    >
       <div className="flex items-center gap-4 min-w-0">
         <div
           className={`h-10 w-10 rounded-2xl grid place-items-center border shrink-0 ${
@@ -1442,7 +1719,11 @@ function TxnRow({ t }: { t: TxnRowUnified }) {
               : "bg-rose-500/15 border-rose-500/30 text-rose-300"
           }`}
         >
-          {isIncome ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+          {isIncome ? (
+            <ArrowDownLeft size={18} />
+          ) : (
+            <ArrowUpRight size={18} />
+          )}
         </div>
 
         <div className="min-w-0">
@@ -1451,14 +1732,19 @@ function TxnRow({ t }: { t: TxnRowUnified }) {
           </div>
 
           <div className="text-sm text-white/60 truncate">
-            {railLabel} • {t.account} • {date.toLocaleDateString()}
+            {railLabel} • {t.account} •{" "}
+            {date.toLocaleDateString()}
           </div>
 
           {showSubtitle && (
-            <div className="text-xs text-white/60 mt-0.5 truncate">{t.subtitle}</div>
+            <div className="text-xs text-white/60 mt-0.5 truncate">
+              {t.subtitle}
+            </div>
           )}
           {t.note && (
-            <div className="text-xs text-white/50 mt-0.5 truncate">Note: {t.note}</div>
+            <div className="text-xs text-white/50 mt-0.5 truncate">
+              Note: {t.note}
+            </div>
           )}
         </div>
       </div>
@@ -1471,7 +1757,7 @@ function TxnRow({ t }: { t: TxnRowUnified }) {
         {isIncome ? "+" : "−"}
         {fmtMoney(Math.abs(t.amount))}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -1487,13 +1773,21 @@ function groupByDate(rows: TxnRowUnified[]) {
   );
 }
 
-function TransactionsPanel({ txns }: { txns: TxnRowUnified[] }) {
+function TransactionsPanel({
+  txns,
+  onOpenTxn,
+}: {
+  txns: TxnRowUnified[];
+  onOpenTxn: (t: TxnRowUnified) => void;
+}) {
   const [tab, setTab] = useState<"sent" | "received" | "all">("all");
 
   let rows = txns.filter((t) =>
     tab === "all" ? true : tab === "received" ? t.amount > 0 : t.amount < 0
   );
-  rows = rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  rows = rows.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   const last30 = useMemo(() => totalsLastNDays(txns, 30), [txns]);
   const grouped = groupByDate(rows);
@@ -1501,9 +1795,20 @@ function TransactionsPanel({ txns }: { txns: TxnRowUnified[] }) {
   return (
     <div className="space-y-6">
       <div className="grid sm:grid-cols-3 gap-4">
-        <SummaryCard label="Sent (last 30d)" value={fmtMoney(last30.sent)} tone="sent" />
-        <SummaryCard label="Received (last 30d)" value={fmtMoney(last30.received)} tone="received" />
-        <SummaryCard label="Net (last 30d)" value={fmtMoney(last30.net)} />
+        <SummaryCard
+          label="Sent (last 30d)"
+          value={fmtMoney(last30.sent)}
+          tone="sent"
+        />
+        <SummaryCard
+          label="Received (last 30d)"
+          value={fmtMoney(last30.received)}
+          tone="received"
+        />
+        <SummaryCard
+          label="Net (last 30d)"
+          value={fmtMoney(last30.net)}
+        />
       </div>
 
       <div className="md:sticky md:top:[64px] z-[5] -mx-6 px-6 py-4 bg-[#0F1622]/95 backdrop-blur-md border-y border-white/20 shadow-md">
@@ -1514,7 +1819,9 @@ function TransactionsPanel({ txns }: { txns: TxnRowUnified[] }) {
 
       <div className="rounded-3xl border border-white/20 overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
         {grouped.length === 0 ? (
-          <div className="p-12 text-center text-white/70 text-base">No transactions.</div>
+          <div className="p-12 text-center text-white/70 text-base">
+            No transactions.
+          </div>
         ) : (
           grouped.map(([dateLabel, items]) => (
             <div key={dateLabel} className="bg-white/[0.03]">
@@ -1524,7 +1831,11 @@ function TransactionsPanel({ txns }: { txns: TxnRowUnified[] }) {
                 </span>
               </div>
               {items.map((t) => (
-                <TxnRow key={t.id} t={t} />
+                <TxnRow
+                  key={t.id}
+                  t={t}
+                  onClick={() => onOpenTxn(t)}
+                />
               ))}
             </div>
           ))
@@ -1552,7 +1863,9 @@ function SummaryCard({
   return (
     <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
       <div className="text-sm text-white/70">{label}</div>
-      <div className={`text-2xl font-bold mt-2 ${toneClass}`}>{value}</div>
+      <div className={`text-2xl font-bold mt-2 ${toneClass}`}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -1578,7 +1891,9 @@ function TabPills({
             key={t.key}
             onClick={() => onChange(t.key)}
             className={`px-4 py-2 rounded-2xl text-sm border flex items-center gap-2 shadow-md transition-all ${
-              active ? "bg-[#00E0FF]/15 border-[#00E0FF]/40" : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
+              active
+                ? "bg-[#00E0FF]/15 border-[#00E0FF]/40"
+                : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
             }`}
           >
             {t.icon}
@@ -1613,8 +1928,11 @@ function NotificationsPanel({ activities }: { activities: any[] }) {
           <div className="flex-1">
             <div className="text-sm font-medium">{a.title}</div>
             <div className="text-xs text-white/60 mt-0.5">
-              {new Date(a.createdAt || Date.now()).toLocaleString()} • {a.kind}
-              {a.type ? ` • ${a.type}` : ""} {a.to ? ` • ${a.to}` : ""} {a.amount ? ` • ${a.amount}` : ""}{" "}
+              {new Date(a.createdAt || Date.now()).toLocaleString()} •{" "}
+              {a.kind}
+              {a.type ? ` • ${a.type}` : ""}{" "}
+              {a.to ? ` • ${a.to}` : ""}{" "}
+              {a.amount ? ` • ${a.amount}` : ""}{" "}
               {a.ref ? ` • Ref ${a.ref}` : ""}
             </div>
             {a.meta && Object.keys(a.meta).length > 0 && (
