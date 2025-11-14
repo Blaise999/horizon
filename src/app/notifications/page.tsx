@@ -18,7 +18,7 @@ import {
 import {
   getNotifications as apiGetNotifications,
   markNotificationRead as apiMarkNotificationRead,
-} from "@/libs/api"; // ✅ unified API client
+} from "@/libs/api"; // ✅ hook into the unified API client (not "libs")
 
 /* -------------------------------------------------------------------------- */
 /* Types (mirror backend notify payloads)                                     */
@@ -31,7 +31,7 @@ export type BackendNotification = {
   kind: string; // e.g., transfer_pending, transfer_completed
   title: string;
   message?: string;
-  meta?: Json; // { referenceId, rail, to, amount, currency, status, ... }
+  meta?: Json; // { referenceId, rail, to, amount, currency, ... }
   route?: string; // optional deep link from backend
   preview?: { type?: string; amount?: number; to?: string };
   createdAt: string; // ISO
@@ -55,75 +55,21 @@ function fmtDateTime(iso: string) {
   }
 }
 
-// 🔗 Decide where a notification should deep-link into the app
 function toRoute(n: BackendNotification) {
-  // 1) If backend explicitly set a route, trust it
+  // Prefer explicit route, otherwise derive from referenceId if present
   const explicit = (n as any).route as string | undefined;
   if (explicit) return explicit;
 
-  const meta = n.meta || {};
-
-  // 2) Canonical reference ID (for transfers)
   const ref =
-    meta.referenceId ||
-    meta.ref ||
+    n.meta?.referenceId ||
+    n.meta?.ref ||
     (n as any).referenceId ||
     (n as any).ref;
 
-  // If there's no reference at all, just fall back to a generic detail page
-  if (!ref) {
-    return `/dashboard/notifications/${encodeURIComponent(n._id)}`;
-  }
+  if (ref) return `/transfer/status?ref=${encodeURIComponent(ref)}`;
 
-  // 3) Rail + status inference
-  const rail =
-    meta.rail ||
-    meta.type ||
-    meta.railType ||
-    meta.railKind ||
-    undefined;
-
-  const statusRaw =
-    (meta.status as string) ||
-    (meta.stage as string) ||
-    (meta.state as string) ||
-    "";
-  const status = statusRaw.toUpperCase();
-  const kind = (n.kind || "").toLowerCase();
-
-  const params = new URLSearchParams();
-  params.set("ref", ref);
-  if (rail) params.set("type", String(rail));
-
-  const isPending =
-    kind === "transfer_pending" ||
-    status === "PENDING_ADMIN" ||
-    status === "PENDING" ||
-    status === "OTP_REQUIRED";
-
-  const isCompleted =
-    kind === "transfer_completed" ||
-    kind === "transfer_success" ||
-    status === "COMPLETED" ||
-    status === "POSTED";
-
-  const isScheduled =
-    kind === "transfer_scheduled" ||
-    status === "SCHEDULED";
-
-  // 4) Map to the correct Horizon flows
-  if (isPending) {
-    // 🔁 Pending review / OTP / admin queue → pending detail
-    return `/Transfer/pending?${params.toString()}`;
-  }
-
-  if (isCompleted || isScheduled) {
-    // ✅ Completed or scheduled → success view
-    return `/Transfer/success?${params.toString()}`;
-  }
-
-  // 5) Fallback: treat as a generic completed transfer status
-  return `/Transfer/success?${params.toString()}`;
+  // fallback: generic notifications detail page (if you add one later)
+  return `/dashboard/notifications/${encodeURIComponent(n._id)}`;
 }
 
 function normalizeOne(raw: any): BackendNotification {
@@ -359,11 +305,7 @@ export default function NotificationPage() {
     opts?: { optimisticOnly?: boolean }
   ) {
     setItems((prev) =>
-      prev.map((i) =>
-        i._id === id
-          ? { ...i, read: true, readAt: new Date().toISOString() }
-          : i
-      )
+      prev.map((i) => (i._id === id ? { ...i, read: true, readAt: new Date().toISOString() } : i))
     );
     if (opts?.optimisticOnly) return;
 
@@ -371,9 +313,7 @@ export default function NotificationPage() {
       await apiMarkNotificationRead(id);
     } catch {
       setItems((prev) =>
-        prev.map((i) =>
-          i._id === id ? { ...i, read: false, readAt: null } : i
-        )
+        prev.map((i) => (i._id === id ? { ...i, read: false, readAt: null } : i))
       );
     }
   }
@@ -383,9 +323,7 @@ export default function NotificationPage() {
     if (!toMark.length) return;
     // optimistic
     const nowIso = new Date().toISOString();
-    setItems((prev) =>
-      prev.map((i) => (i.read ? i : { ...i, read: true, readAt: nowIso }))
-    );
+    setItems((prev) => prev.map((i) => (i.read ? i : { ...i, read: true, readAt: nowIso })));
     await Promise.allSettled(toMark.map((id) => apiMarkNotificationRead(id)));
   }
 
@@ -434,9 +372,7 @@ export default function NotificationPage() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() =>
-                  setFilter((f) => (f === "unread" ? "all" : "unread"))
-                }
+                onClick={() => setFilter((f) => (f === "unread" ? "all" : "unread"))}
                 className={`px-3 py-2 rounded-2xl text-sm inline-flex items-center gap-2 border ${
                   filter === "unread"
                     ? "bg-emerald-500/10 border-emerald-400/40"
@@ -448,19 +384,15 @@ export default function NotificationPage() {
                 {filter === "unread" ? "Showing unread" : "Show unread"}
               </button>
 
-              <button
-                onClick={() => {
-                  void refreshList();
-                }}
-                className="px-3 py-2 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2 disabled:opacity-60"
-                title="Refresh"
-                disabled={refreshing}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
+             <button
+  onClick={() => { void refreshList(); }}   // ✅ call it, don’t pass the fn
+  className="px-3 py-2 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2 disabled:opacity-60"
+  title="Refresh"
+  disabled={refreshing}
+>
+  <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+  Refresh
+</button>
 
               <button
                 onClick={onMarkAllSeen}
@@ -548,27 +480,19 @@ export default function NotificationPage() {
                   (n as any).referenceId ||
                   (n as any).ref;
 
-                const isTransfer =
-                  (n.kind || "").toLowerCase().startsWith("transfer_") ||
-                  Boolean(ref);
-
                 // Fancy unread card: subtle gradient frame + glow ring
                 const UnreadFrame: React.FC<{ children: React.ReactNode }> = ({
                   children,
                 }) => (
                   <div className="rounded-3xl p-[1px] bg-gradient-to-r from-emerald-500/30 via-cyan-400/20 to-emerald-500/30">
-                    <div className="rounded-[22px] bg-[#0E131B]">
-                      {children}
-                    </div>
+                    <div className="rounded-[22px] bg-[#0E131B]">{children}</div>
                   </div>
                 );
 
                 const CardInner = (
                   <div
                     className={`p-4 flex items-start gap-4 rounded-2xl border ${
-                      seen
-                        ? "border-white/15 bg-white/[0.04]"
-                        : "border-white/10 bg-white/[0.06]"
+                      seen ? "border-white/15 bg-white/[0.04]" : "border-white/10 bg-white/[0.06]"
                     }`}
                   >
                     <div
@@ -579,9 +503,7 @@ export default function NotificationPage() {
                       }`}
                     >
                       <CheckCircle2
-                        className={`${
-                          seen ? "text-white/70" : "text-emerald-300"
-                        }`}
+                        className={`${seen ? "text-white/70" : "text-emerald-300"}`}
                         size={18}
                       />
                       {!seen && (
@@ -608,9 +530,7 @@ export default function NotificationPage() {
 
                       <div className="mt-2 text-xs text-white/60 flex flex-wrap items-center gap-2">
                         {n.kind && (
-                          <span className="uppercase tracking-wide">
-                            {n.kind}
-                          </span>
+                          <span className="uppercase tracking-wide">{n.kind}</span>
                         )}
                         {amount && <span>{amount}</span>}
                         {to && <span>→ {to}</span>}
@@ -627,8 +547,7 @@ export default function NotificationPage() {
                           onClick={() => onOpen(n)}
                           className="px-3 py-2 rounded-xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2"
                         >
-                          {isTransfer ? "View transfer" : "Open details"}{" "}
-                          <ArrowRight size={14} />
+                          Open details <ArrowRight size={14} />
                         </button>
                         {!seen && (
                           <button
@@ -659,7 +578,7 @@ export default function NotificationPage() {
               })
             )}
 
-          {/* Load more sentinel */}
+            {/* Load more sentinel */}
             {!initialLoading && hasMore && (
               <div
                 ref={sentryRef}
