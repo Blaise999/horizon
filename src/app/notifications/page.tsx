@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   Trash2,
   Eye,
-  ArrowRight,
   RefreshCw,
   AlertTriangle,
   Sparkles,
@@ -31,8 +30,8 @@ export type BackendNotification = {
   kind: string; // e.g., transfer_pending, transfer_completed
   title: string;
   message?: string;
-  meta?: Json; // { referenceId, rail, to, amount, currency, status, ... }
-  route?: string; // optional deep link from backend
+  meta?: Json; // { referenceId, rail, to, amount, currency, ... }
+  route?: string; // optional deep link from backend (we're ignoring it for now)
   preview?: { type?: string; amount?: number; to?: string };
   createdAt: string; // ISO
   readAt?: string | null; // backend timestamp if read
@@ -55,58 +54,6 @@ function fmtDateTime(iso: string) {
   }
 }
 
-/**
- * Decide where a notification should deep-link.
- * - Prefer backend-provided route
- * - Else choose /Transfer/pending or /Transfer/success based on kind/status
- * - Fallback: generic status page
- */
-function toRoute(n: BackendNotification) {
-  // 1) Explicit route wins
-  const explicit = (n as any).route as string | undefined;
-  if (explicit) return explicit;
-
-  // 2) Extract reference
-  const ref =
-    n.meta?.referenceId ||
-    n.meta?.ref ||
-    (n as any).referenceId ||
-    (n as any).ref;
-
-  if (!ref) {
-    // last resort: a generic notification detail page
-    return `/dashboard/notifications/${encodeURIComponent(n._id)}`;
-  }
-
-  const kind = (n.kind || "").toLowerCase();
-  const status = String(n.meta?.status || "").toUpperCase();
-
-  // 3) Pending-style notifications
-  const isPending =
-    kind.includes("pending") ||
-    kind.includes("otp_required") ||
-    status === "PENDING_ADMIN" ||
-    status === "OTP_REQUIRED" ||
-    status === "SCHEDULED";
-
-  if (isPending) {
-    return `/Transfer/pending?ref=${encodeURIComponent(ref)}`;
-  }
-
-  // 4) Completed-style notifications
-  const isCompleted =
-    kind.includes("completed") ||
-    kind.includes("success") ||
-    status === "COMPLETED";
-
-  if (isCompleted) {
-    return `/Transfer/success?ref=${encodeURIComponent(ref)}`;
-  }
-
-  // 5) Fallback to neutral status page
-  return `/Transfer/status?ref=${encodeURIComponent(ref)}`;
-}
-
 function normalizeOne(raw: any): BackendNotification {
   const readFlag =
     typeof raw.read === "boolean"
@@ -114,6 +61,7 @@ function normalizeOne(raw: any): BackendNotification {
       : raw.readAt
       ? Boolean(raw.readAt)
       : false;
+
   return {
     _id: String(raw._id ?? raw.id ?? cryptoRandomId()),
     userId: raw.userId,
@@ -121,7 +69,7 @@ function normalizeOne(raw: any): BackendNotification {
     title: String(raw.title ?? "Notification"),
     message: typeof raw.message === "string" ? raw.message : undefined,
     meta: raw.meta ?? {},
-    route: raw.route,
+    route: raw.route,          // still captured, but NOT used
     preview: raw.preview,
     createdAt: String(raw.createdAt ?? new Date().toISOString()),
     readAt: raw.readAt ?? null,
@@ -130,9 +78,10 @@ function normalizeOne(raw: any): BackendNotification {
 }
 
 function cryptoRandomId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto)
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     // @ts-ignore
     return crypto.randomUUID();
+  }
   return Math.random().toString(36).slice(2);
 }
 
@@ -329,12 +278,6 @@ export default function NotificationPage() {
     [items]
   );
 
-  async function onOpen(n: BackendNotification) {
-    await markOneRead(n._id, { optimisticOnly: true });
-    const route = toRoute(n);
-    router.push(route);
-  }
-
   async function markOneRead(
     id: string,
     opts?: { optimisticOnly?: boolean }
@@ -358,8 +301,8 @@ export default function NotificationPage() {
   async function onMarkAllSeen() {
     const toMark = items.filter((i) => !i.read).map((i) => i._id);
     if (!toMark.length) return;
-    // optimistic
     const nowIso = new Date().toISOString();
+    // optimistic
     setItems((prev) =>
       prev.map((i) => (i.read ? i : { ...i, read: true, readAt: nowIso }))
     );
@@ -526,13 +469,11 @@ export default function NotificationPage() {
                   (n as any).ref;
 
                 // Fancy unread card: subtle gradient frame + glow ring
-                const UnreadFrame: React.FC<{ children: React.ReactNode }> = ({
-                  children,
-                }) => (
+                const UnreadFrame: React.FC<{
+                  children: React.ReactNode;
+                }> = ({ children }) => (
                   <div className="rounded-3xl p-[1px] bg-gradient-to-r from-emerald-500/30 via-cyan-400/20 to-emerald-500/30">
-                    <div className="rounded-[22px] bg-[#0E131B]">
-                      {children}
-                    </div>
+                    <div className="rounded-[22px] bg-[#0E131B]">{children}</div>
                   </div>
                 );
 
@@ -596,12 +537,10 @@ export default function NotificationPage() {
                       </div>
 
                       <div className="mt-3 flex items-center gap-2">
-                        <button
-                          onClick={() => onOpen(n)}
-                          className="px-3 py-2 rounded-xl bg.white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2"
-                        >
-                          Open details <ArrowRight size={14} />
-                        </button>
+                        {/* 🔒 No navigation – just a label so user knows it's informational */}
+                        <span className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-[11px] text-white/60">
+                          Transfer details available in your activity feed
+                        </span>
                         {!seen && (
                           <button
                             onClick={() => markOneRead(n._id)}
