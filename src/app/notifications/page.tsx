@@ -1,7 +1,14 @@
 // app/notification/page.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/app/dashboard/dashboardnav";
 import {
@@ -18,7 +25,7 @@ import {
 import {
   getNotifications as apiGetNotifications,
   markNotificationRead as apiMarkNotificationRead,
-} from "@/libs/api"; // ✅ hook into the unified API client (not "libs")
+} from "@/libs/api"; // ✅ unified API client
 
 /* -------------------------------------------------------------------------- */
 /* Types (mirror backend notify payloads)                                     */
@@ -31,7 +38,7 @@ export type BackendNotification = {
   kind: string; // e.g., transfer_pending, transfer_completed
   title: string;
   message?: string;
-  meta?: Json; // { referenceId, rail, to, amount, currency, ... }
+  meta?: Json; // { referenceId, rail, to, amount, currency, status, ... }
   route?: string; // optional deep link from backend
   preview?: { type?: string; amount?: number; to?: string };
   createdAt: string; // ISO
@@ -55,8 +62,15 @@ function fmtDateTime(iso: string) {
   }
 }
 
+/**
+ * Decide where to send the user when they tap a notification.
+ * Priority:
+ *  1) backend-provided route
+ *  2) transfer ref → /Transfer/pending or /Transfer/success
+ *  3) generic dashboard fallback
+ */
 function toRoute(n: BackendNotification) {
-  // Prefer explicit route, otherwise derive from referenceId if present
+  // 1) Explicit route from backend wins
   const explicit = (n as any).route as string | undefined;
   if (explicit) return explicit;
 
@@ -66,12 +80,46 @@ function toRoute(n: BackendNotification) {
     (n as any).referenceId ||
     (n as any).ref;
 
-  if (ref) return `/transfer/status?ref=${encodeURIComponent(ref)}`;
+  if (!ref) {
+    // No reference: just fall back to dashboard
+    return "/dashboard/dashboard";
+  }
 
-  // fallback: generic notifications detail page (if you add one later)
-  return `/dashboard/notifications/${encodeURIComponent(n._id)}`;
+  const kind = String(n.kind || "").toLowerCase();
+  const status = String(n.meta?.status || n.meta?.state || "").toLowerCase();
+
+  const isPending =
+    kind.includes("pending") ||
+    status === "pending_admin" ||
+    status === "pending" ||
+    status === "processing";
+
+  const isCompleted =
+    kind.includes("completed") ||
+    kind.includes("success") ||
+    status === "completed" ||
+    status === "success" ||
+    status === "posted" ||
+    status === "settled";
+
+  if (isPending) {
+    // 🔗 Pending review / in-flight transfers
+    return `/Transfer/pending?ref=${encodeURIComponent(ref)}`;
+  }
+
+  if (isCompleted) {
+    // 🔗 Fully processed transfers
+    return `/Transfer/success?ref=${encodeURIComponent(ref)}`;
+  }
+
+  // Default: treat as completed success (safer UX)
+  return `/Transfer/success?ref=${encodeURIComponent(ref)}`;
 }
 
+/**
+ * Normalize raw backend item into our frontend shape.
+ * Works whether backend returns Mongoose docs or plain objects.
+ */
 function normalizeOne(raw: any): BackendNotification {
   const readFlag =
     typeof raw.read === "boolean"
@@ -79,6 +127,7 @@ function normalizeOne(raw: any): BackendNotification {
       : raw.readAt
       ? Boolean(raw.readAt)
       : false;
+
   return {
     _id: String(raw._id ?? raw.id ?? cryptoRandomId()),
     userId: raw.userId,
@@ -165,11 +214,16 @@ export default function NotificationPage() {
           limit,
           after: after ?? undefined,
         });
-        // The wrapper may return {items} or a plain array. Normalize both.
+
+        // The wrapper may return:
+        //  - a plain array
+        //  - { items, nextAfter, ok }
         const rawArray: any[] = Array.isArray(data)
           ? data
           : (data?.items ?? []);
+
         const arr: BackendNotification[] = rawArray.map(normalizeOne);
+
         const nextAfter: string | null = Array.isArray(data)
           ? arr.length
             ? arr[arr.length - 1]?.createdAt
@@ -305,7 +359,9 @@ export default function NotificationPage() {
     opts?: { optimisticOnly?: boolean }
   ) {
     setItems((prev) =>
-      prev.map((i) => (i._id === id ? { ...i, read: true, readAt: new Date().toISOString() } : i))
+      prev.map((i) =>
+        i._id === id ? { ...i, read: true, readAt: new Date().toISOString() } : i
+      )
     );
     if (opts?.optimisticOnly) return;
 
@@ -313,7 +369,9 @@ export default function NotificationPage() {
       await apiMarkNotificationRead(id);
     } catch {
       setItems((prev) =>
-        prev.map((i) => (i._id === id ? { ...i, read: false, readAt: null } : i))
+        prev.map((i) =>
+          i._id === id ? { ...i, read: false, readAt: null } : i
+        )
       );
     }
   }
@@ -323,7 +381,9 @@ export default function NotificationPage() {
     if (!toMark.length) return;
     // optimistic
     const nowIso = new Date().toISOString();
-    setItems((prev) => prev.map((i) => (i.read ? i : { ...i, read: true, readAt: nowIso })));
+    setItems((prev) =>
+      prev.map((i) => (i.read ? i : { ...i, read: true, readAt: nowIso }))
+    );
     await Promise.allSettled(toMark.map((id) => apiMarkNotificationRead(id)));
   }
 
@@ -372,7 +432,9 @@ export default function NotificationPage() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setFilter((f) => (f === "unread" ? "all" : "unread"))}
+                onClick={() =>
+                  setFilter((f) => (f === "unread" ? "all" : "unread"))
+                }
                 className={`px-3 py-2 rounded-2xl text-sm inline-flex items-center gap-2 border ${
                   filter === "unread"
                     ? "bg-emerald-500/10 border-emerald-400/40"
@@ -384,15 +446,19 @@ export default function NotificationPage() {
                 {filter === "unread" ? "Showing unread" : "Show unread"}
               </button>
 
-             <button
-  onClick={() => { void refreshList(); }}   // ✅ call it, don’t pass the fn
-  className="px-3 py-2 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2 disabled:opacity-60"
-  title="Refresh"
-  disabled={refreshing}
->
-  <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-  Refresh
-</button>
+              <button
+                onClick={() => {
+                  void refreshList();
+                }}
+                className="px-3 py-2 rounded-2xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2 disabled:opacity-60"
+                title="Refresh"
+                disabled={refreshing}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </button>
 
               <button
                 onClick={onMarkAllSeen}
@@ -481,18 +547,20 @@ export default function NotificationPage() {
                   (n as any).ref;
 
                 // Fancy unread card: subtle gradient frame + glow ring
-                const UnreadFrame: React.FC<{ children: React.ReactNode }> = ({
-                  children,
-                }) => (
+                const UnreadFrame = ({ children }: { children: ReactNode }) => (
                   <div className="rounded-3xl p-[1px] bg-gradient-to-r from-emerald-500/30 via-cyan-400/20 to-emerald-500/30">
-                    <div className="rounded-[22px] bg-[#0E131B]">{children}</div>
+                    <div className="rounded-[22px] bg-[#0E131B]">
+                      {children}
+                    </div>
                   </div>
                 );
 
                 const CardInner = (
                   <div
                     className={`p-4 flex items-start gap-4 rounded-2xl border ${
-                      seen ? "border-white/15 bg-white/[0.04]" : "border-white/10 bg-white/[0.06]"
+                      seen
+                        ? "border-white/15 bg-white/[0.04]"
+                        : "border-white/10 bg-white/[0.06]"
                     }`}
                   >
                     <div
@@ -503,7 +571,9 @@ export default function NotificationPage() {
                       }`}
                     >
                       <CheckCircle2
-                        className={`${seen ? "text-white/70" : "text-emerald-300"}`}
+                        className={`${
+                          seen ? "text-white/70" : "text-emerald-300"
+                        }`}
                         size={18}
                       />
                       {!seen && (
@@ -530,7 +600,9 @@ export default function NotificationPage() {
 
                       <div className="mt-2 text-xs text-white/60 flex flex-wrap items-center gap-2">
                         {n.kind && (
-                          <span className="uppercase tracking-wide">{n.kind}</span>
+                          <span className="uppercase tracking-wide">
+                            {n.kind}
+                          </span>
                         )}
                         {amount && <span>{amount}</span>}
                         {to && <span>→ {to}</span>}
