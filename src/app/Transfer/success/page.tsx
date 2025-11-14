@@ -242,8 +242,8 @@ export default function Success() {
               <h1 className="text-2xl font-semibold">{header}</h1>
               <p className="text-white/70 mt-1">{meta}</p>
               <p className="text-white/80 mt-2">
-                This transfer was <b>sent successfully</b>.{" "}
-                It’s now locked in and will appear in your activity and statements.
+                This transfer has been <b>successfully processed.</b>{" "}
+                The transaction details are recorded and will appear in your activity and statements.
               </p>
             </div>
           </div>
