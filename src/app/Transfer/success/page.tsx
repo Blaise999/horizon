@@ -1,7 +1,7 @@
 // app/Transfer/success/Success.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/app/dashboard/dashboardnav";
 import { CheckCircle2, ArrowRight, ExternalLink } from "lucide-react";
@@ -157,12 +157,27 @@ export default function Success() {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (parsed && parsed.referenceId && parsed.amount?.value) {
-          // Ensure required nested objects exist
+          const safeFees =
+            parsed.fees && typeof parsed.fees.app === "number"
+              ? parsed.fees
+              : {
+                  app: Number(parsed.fee || 0),
+                  currency: parsed.currency || "USD",
+                };
+
           const safe: TransferSummary = {
             ...parsed,
             status: "completed",
-            sender: parsed.sender || { accountName: "Checking", accountMasked: "••••9876" },
-            recipient: parsed.recipient || { name: "Recipient", accountMasked: "••••1234" },
+            amount: parsed.amount,
+            fees: safeFees,
+            sender: parsed.sender || {
+              accountName: "Checking",
+              accountMasked: "••••9876",
+            },
+            recipient: parsed.recipient || {
+              name: "Recipient",
+              accountMasked: "••••1234",
+            },
           };
           return safe;
         }
