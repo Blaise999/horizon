@@ -1,14 +1,7 @@
 // app/notification/page.tsx
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/app/dashboard/dashboardnav";
 import {
@@ -63,17 +56,17 @@ function fmtDateTime(iso: string) {
 }
 
 /**
- * Decide where to send the user when they tap a notification.
- * Priority:
- *  1) backend-provided route
- *  2) transfer ref → /Transfer/pending or /Transfer/success
- *  3) generic dashboard fallback
+ * Decide where a notification should deep-link.
+ * - Prefer backend-provided route
+ * - Else choose /Transfer/pending or /Transfer/success based on kind/status
+ * - Fallback: generic status page
  */
 function toRoute(n: BackendNotification) {
-  // 1) Explicit route from backend wins
+  // 1) Explicit route wins
   const explicit = (n as any).route as string | undefined;
   if (explicit) return explicit;
 
+  // 2) Extract reference
   const ref =
     n.meta?.referenceId ||
     n.meta?.ref ||
@@ -81,45 +74,39 @@ function toRoute(n: BackendNotification) {
     (n as any).ref;
 
   if (!ref) {
-    // No reference: just fall back to dashboard
-    return "/dashboard/dashboard";
+    // last resort: a generic notification detail page
+    return `/dashboard/notifications/${encodeURIComponent(n._id)}`;
   }
 
-  const kind = String(n.kind || "").toLowerCase();
-  const status = String(n.meta?.status || n.meta?.state || "").toLowerCase();
+  const kind = (n.kind || "").toLowerCase();
+  const status = String(n.meta?.status || "").toUpperCase();
 
+  // 3) Pending-style notifications
   const isPending =
     kind.includes("pending") ||
-    status === "pending_admin" ||
-    status === "pending" ||
-    status === "processing";
-
-  const isCompleted =
-    kind.includes("completed") ||
-    kind.includes("success") ||
-    status === "completed" ||
-    status === "success" ||
-    status === "posted" ||
-    status === "settled";
+    kind.includes("otp_required") ||
+    status === "PENDING_ADMIN" ||
+    status === "OTP_REQUIRED" ||
+    status === "SCHEDULED";
 
   if (isPending) {
-    // 🔗 Pending review / in-flight transfers
     return `/Transfer/pending?ref=${encodeURIComponent(ref)}`;
   }
 
+  // 4) Completed-style notifications
+  const isCompleted =
+    kind.includes("completed") ||
+    kind.includes("success") ||
+    status === "COMPLETED";
+
   if (isCompleted) {
-    // 🔗 Fully processed transfers
     return `/Transfer/success?ref=${encodeURIComponent(ref)}`;
   }
 
-  // Default: treat as completed success (safer UX)
-  return `/Transfer/success?ref=${encodeURIComponent(ref)}`;
+  // 5) Fallback to neutral status page
+  return `/Transfer/status?ref=${encodeURIComponent(ref)}`;
 }
 
-/**
- * Normalize raw backend item into our frontend shape.
- * Works whether backend returns Mongoose docs or plain objects.
- */
 function normalizeOne(raw: any): BackendNotification {
   const readFlag =
     typeof raw.read === "boolean"
@@ -127,7 +114,6 @@ function normalizeOne(raw: any): BackendNotification {
       : raw.readAt
       ? Boolean(raw.readAt)
       : false;
-
   return {
     _id: String(raw._id ?? raw.id ?? cryptoRandomId()),
     userId: raw.userId,
@@ -214,16 +200,11 @@ export default function NotificationPage() {
           limit,
           after: after ?? undefined,
         });
-
-        // The wrapper may return:
-        //  - a plain array
-        //  - { items, nextAfter, ok }
+        // The wrapper may return {items} or a plain array. Normalize both.
         const rawArray: any[] = Array.isArray(data)
           ? data
           : (data?.items ?? []);
-
         const arr: BackendNotification[] = rawArray.map(normalizeOne);
-
         const nextAfter: string | null = Array.isArray(data)
           ? arr.length
             ? arr[arr.length - 1]?.createdAt
@@ -369,9 +350,7 @@ export default function NotificationPage() {
       await apiMarkNotificationRead(id);
     } catch {
       setItems((prev) =>
-        prev.map((i) =>
-          i._id === id ? { ...i, read: false, readAt: null } : i
-        )
+        prev.map((i) => (i._id === id ? { ...i, read: false, readAt: null } : i))
       );
     }
   }
@@ -547,7 +526,9 @@ export default function NotificationPage() {
                   (n as any).ref;
 
                 // Fancy unread card: subtle gradient frame + glow ring
-                const UnreadFrame = ({ children }: { children: ReactNode }) => (
+                const UnreadFrame: React.FC<{ children: React.ReactNode }> = ({
+                  children,
+                }) => (
                   <div className="rounded-3xl p-[1px] bg-gradient-to-r from-emerald-500/30 via-cyan-400/20 to-emerald-500/30">
                     <div className="rounded-[22px] bg-[#0E131B]">
                       {children}
@@ -617,7 +598,7 @@ export default function NotificationPage() {
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           onClick={() => onOpen(n)}
-                          className="px-3 py-2 rounded-xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2"
+                          className="px-3 py-2 rounded-xl bg.white/10 border border-white/20 hover:bg-white/15 text-sm inline-flex items-center gap-2"
                         >
                           Open details <ArrowRight size={14} />
                         </button>
