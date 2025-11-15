@@ -1,5 +1,3 @@
-
-
 // app/Transfer/pending/Pending.tsx
 "use client";
 
@@ -60,6 +58,10 @@ type PendingSummary = {
   referenceId: string;
   cancelable?: boolean;
   note?: string;
+
+  // 🔹 crypto-specific
+  cryptoAmount?: number;
+  cryptoSymbol?: string;
 };
 
 /* ---------------------------- helpers & mappers ---------------------------- */
@@ -81,8 +83,8 @@ function firstTruthy(...vals: any[]) {
     if (typeof v === "number" || typeof v === "boolean" || v instanceof Date) {
       return String(v);
     }
-    if (typeof v === "object" && typeof v.name === "string" && v.name.trim()) {
-      return v.name.trim();
+    if (typeof v === "object" && typeof (v as any).name === "string" && (v as any).name.trim()) {
+      return (v as any).name.trim();
     }
   }
   return undefined;
@@ -134,7 +136,60 @@ function mapServerToSummary(src: any): PendingSummary {
       src?.meta?.rail ||
       "ach") as RailType;
 
-  // amount / fees
+  // 🔹 crypto meta (symbol / qty / address / network) from many possible shapes
+  const cryptoMeta =
+    src?.crypto ||
+    src?.meta?.crypto ||
+    src?.transfer?.crypto ||
+    src?.transfer?.meta?.crypto ||
+    src?.ctx?.crypto ||
+    src?.payload?.crypto ||
+    undefined;
+
+  const cryptoSymbolRaw =
+    cryptoMeta?.symbol ||
+    cryptoMeta?.asset ||
+    cryptoMeta?.ticker ||
+    src?.cryptoSymbol ||
+    src?.symbol ||
+    src?.asset ||
+    undefined;
+
+  const cryptoAmount =
+    cryptoMeta?.qty != null
+      ? asNumber(cryptoMeta.qty)
+      : cryptoMeta?.amount != null
+      ? asNumber(cryptoMeta.amount)
+      : src?.cryptoAmount != null
+      ? asNumber(src.cryptoAmount)
+      : src?.amountCrypto != null
+      ? asNumber(src.amountCrypto)
+      : undefined;
+
+  const cryptoAddress = firstTruthy(
+    src?.cryptoAddress,
+    src?.toAddress,
+    src?.address,
+    cryptoMeta?.address,
+    cryptoMeta?.toAddress,
+    src?.payload?.cryptoAddress,
+    src?.ctx?.cryptoAddress,
+    src?.ctx?.toAddress
+  );
+
+  const cryptoNetwork = firstTruthy(
+    src?.network,
+    src?.blockchain,
+    src?.chain,
+    src?.transfer?.network,
+    cryptoMeta?.network,
+    cryptoMeta?.chain,
+    cryptoMeta?.blockchain,
+    src?.payload?.network,
+    src?.ctx?.network
+  );
+
+  // amount / fees (fiat)
   const amountObj =
     src?.amount ??
     src?.transfer?.amount ??
@@ -187,8 +242,8 @@ function mapServerToSummary(src: any): PendingSummary {
       src?.payee?.accountRef,
       src?.accountMasked
     ),
-    cryptoAddress: firstTruthy(src?.cryptoAddress, src?.toAddress, src?.address),
-    network: firstTruthy(src?.network, src?.blockchain, src?.chain, src?.transfer?.network),
+    cryptoAddress,
+    network: cryptoNetwork,
   };
 
   const etaText =
@@ -224,6 +279,8 @@ function mapServerToSummary(src: any): PendingSummary {
       "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
     cancelable: typeof src?.cancelable === "boolean" ? src.cancelable : true,
     note: firstTruthy(src?.note, src?.memo, src?.reference, src?.description),
+    cryptoAmount: cryptoAmount,
+    cryptoSymbol: cryptoSymbolRaw ? String(cryptoSymbolRaw).toUpperCase() : undefined,
   };
 }
 
@@ -242,6 +299,9 @@ function mapQueryToSummary(params: URLSearchParams): PendingSummary {
       : type === "crypto" ? "1–3 confirmations"
       : ["paypal","wise","revolut","venmo","zelle","cashapp","wechat","alipay"].includes(type) ? "Usually instant"
       : undefined);
+
+  const cryptoSymbolRaw = q("cryptoSymbol", "");
+  const cryptoAmtRaw = q("cryptoAmount", "");
 
   return {
     status: (q("status","pending") as PendingStatus),
@@ -269,6 +329,8 @@ function mapQueryToSummary(params: URLSearchParams): PendingSummary {
     referenceId: q("ref", "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase()),
     cancelable: q("cancelable","1") === "1",
     note: q("note","") || undefined,
+    cryptoAmount: cryptoAmtRaw ? Number(cryptoAmtRaw) : undefined,
+    cryptoSymbol: cryptoSymbolRaw ? cryptoSymbolRaw.toUpperCase() : undefined,
   };
 }
 
@@ -355,6 +417,16 @@ export default function Pending() {
   const fmtMoney = (n?: number, c = "USD") =>
     typeof n === "number" ? n.toLocaleString(undefined, { style: "currency", currency: c }) : "—";
 
+  // 🔹 Amount display: show "0.00 BTC • $X.XX" for crypto
+  const amountDisplay = useMemo(() => {
+    if (!summary) return "—";
+    const fiat = fmtMoney(summary.amount?.value, summary.amount?.currency || "USD");
+    if (summary.type === "crypto" && typeof summary.cryptoAmount === "number" && summary.cryptoSymbol) {
+      return `${summary.cryptoAmount} ${summary.cryptoSymbol.toUpperCase()} • ${fiat}`;
+    }
+    return fiat;
+  }, [summary]);
+
   const recipientPretty = useMemo(() => {
     if (!summary?.recipient) return "Recipient";
     return (
@@ -403,7 +475,7 @@ export default function Pending() {
 
           {/* core info */}
           <div className="mt-6 grid sm:grid-cols-2 gap-4">
-            <Info label="Amount" value={fmtMoney(summary?.amount?.value, summary?.amount?.currency || "USD")} />
+            <Info label="Amount" value={amountDisplay} />
             <Info label="Recipient" value={recipientPretty} />
             <Info
               label="From account"
