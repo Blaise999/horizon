@@ -663,7 +663,7 @@ export default function CryptoFlowsPage() {
                 <div>
                   <h1 className="text-xl md:text-2xl font-semibold">$ → Crypto</h1>
                   <p className="text-white/70 text-sm mt-1">
-                    Deposit BTC, buy BTC with USD, swap (BTC is the base), or request an on-chain send.
+                    Deposit BTC from external wallets, buy BTC with USD, swap using BTC as your base asset, or initiate an on-chain send.
                   </p>
                 </div>
               </div>
@@ -726,12 +726,12 @@ export default function CryptoFlowsPage() {
                 <div className="rounded-xl border border-white/15 bg-white/[0.03] p-3 text-xs text-white/70 flex gap-2">
                   <Info className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
-                    <b>BTC is your cash.</b> You can swap BTC ↔ other coins. ALT ↔ ALT must be routed via BTC, so pick BTC on one side.
+                    <b>BTC is your base asset.</b> You can swap between BTC and other supported coins. ALT ↔ ALT flows route via BTC, so select BTC on one side of the pair.
                   </div>
                 </div>
 
                 {/* Meta */}
-                <div className="text-xs text-white/60">Quotes via CoinGecko.</div>
+                <div className="text-xs text-white/60">Quotes provided by CoinGecko.</div>
                 <div className="text-xs text-white/60">
                   {lastUpdated ? (
                     <>
@@ -772,7 +772,7 @@ export default function CryptoFlowsPage() {
                     <div className="flex items-center gap-3">
                       <CoinBadge coinId="bitcoin" />
                       <div>
-                        <div className="text-sm text-white/70">Your app deposit address</div>
+                        <div className="text-sm text-white/70">Your Horizon BTC deposit address</div>
                         <div className="text-2xl font-semibold">BTC</div>
                       </div>
                     </div>
@@ -786,15 +786,17 @@ export default function CryptoFlowsPage() {
                         <CopyButton value={btcAddress} disabled={!btcAddress || btcAddrLoading} />
                         {!btcAddress && !btcAddrLoading && (
                           <a href="/onboarding" className="text-xs underline text-white/80 hover:text-white">
-                            Add an address in Onboarding (Wallets)
+                            Add a BTC address in Onboarding (Wallets)
                           </a>
                         )}
                       </div>
                       <div className="text-xs text-white/60 mt-3">
-                        Send BTC from your external wallet to this address. Funds reflect after manual update.
+                        Use this address to transfer BTC from your other wallets or exchanges into Horizon.  
+                        Deposits are credited to your BTC balance after blockchain confirmation and internal review.
                       </div>
                       <div className="text-[11px] text-white/40 mt-2">
-                        Source: <span className="font-medium">/users/me</span> (wallets) {btcAddress ? "(API)" : "(fallback: local cache)"}
+                        Source: <span className="font-medium">/users/me</span> (wallets){" "}
+                        {btcAddress ? "(live from API)" : "(fallback: local cache)"}
                       </div>
                     </div>
                   </div>
@@ -896,7 +898,9 @@ export default function CryptoFlowsPage() {
                     >
                       Submit Buy (OTP + admin approval)
                     </button>
-                    <div className="mt-2 text-xs text-white/60">Confirm with OTP. After approval, BTC remains credited.</div>
+                    <div className="mt-2 text-xs text-white/60">
+                      Confirm with OTP. After approval, the equivalent BTC is credited to your crypto balance.
+                    </div>
                   </>
                 )}
 
@@ -960,7 +964,7 @@ export default function CryptoFlowsPage() {
                     {!swapInvolvesBTC && (
                       <div className="mt-3 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-xs text-amber-200 inline-flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4" />
-                        Swaps must include BTC (BTC is your base). Pick BTC on either the “From” or “To” side.
+                        Swaps must include BTC (BTC is your base asset). Select BTC on either the “From” or “To” side.
                       </div>
                     )}
 
@@ -1027,7 +1031,8 @@ export default function CryptoFlowsPage() {
                     </button>
 
                     <div className="mt-2 text-xs text-white/60">
-                      BTC is the base. We apply an optimistic update and mark it pending; backend approval will reconcile.
+                      BTC remains the reference asset. We apply an optimistic update and mark the swap as pending; final balances are
+                      confirmed after backend approval.
                     </div>
                   </div>
                 )}
@@ -1093,9 +1098,15 @@ export default function CryptoFlowsPage() {
 
                       <button
                         onClick={handleSend}
-                        disabled={!Number(swapFromUnits) || (holdings[fromCoin.symbol] ?? 0) < Number(swapFromUnits) - 1e-12 || !sendAddress}
+                        disabled={
+                          !Number(swapFromUnits) ||
+                          (holdings[fromCoin.symbol] ?? 0) < Number(swapFromUnits) - 1e-12 ||
+                          !sendAddress
+                        }
                         className={`w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
-                          Number(swapFromUnits) && (holdings[fromCoin.symbol] ?? 0) >= Number(swapFromUnits) - 1e-12 && sendAddress
+                          Number(swapFromUnits) &&
+                          (holdings[fromCoin.symbol] ?? 0) >= Number(swapFromUnits) - 1e-12 &&
+                          sendAddress
                             ? ""
                             : "opacity-60 cursor-not-allowed"
                         }`}
@@ -1105,7 +1116,8 @@ export default function CryptoFlowsPage() {
                       </button>
 
                       <div className="text-xs text-white/60">
-                        Optimistic debit of your {fromCoin.symbol}. We mark it pending until admin approval.
+                        We apply an optimistic debit to your {fromCoin.symbol} holdings and mark the transaction as pending. Final
+                        settlement is completed after OTP verification and admin approval.
                       </div>
                     </div>
                   </div>
@@ -1412,7 +1424,7 @@ function OtpDrawer({
   return (
     <div
       className={`mt-5 overflow-hidden rounded-2xl border transition-[max-height,opacity,transform] duration-300 ${
-        open ? "max-h-[260px] opacity-100" : "max-h-0 opacity-0"
+        open ? "max-height-[260px] max-h-[260px] opacity-100" : "max-h-0 opacity-0"
       } ${open ? "border-white/20 bg-white/[0.05]" : "border-transparent bg-transparent"}`}
       aria-hidden={!open}
     >
@@ -1434,7 +1446,7 @@ function OtpDrawer({
           </div>
 
           <div className="mt-2 text-xs text-white/60">
-            We’ve sent a 6-digit code to your verified device/email. Enter it to confirm this action.
+            We’ve sent a 6-digit code to your verified device or email. Enter it below to confirm this action.
           </div>
 
           <div className="mt-4 grid gap-3">
@@ -1487,8 +1499,8 @@ function OtpDrawer({
             </div>
 
             <div className="text-[11px] text-white/45">
-              Having trouble? Ensure your OTP is from the last <b>60 seconds</b> and matches this request. Resend is handled by your
-              backend’s OTP flow.
+              Having trouble? Make sure you’re using the most recent OTP linked to this request. Resend and expiry handling is managed by
+              your backend OTP flow.
             </div>
           </div>
         </div>
