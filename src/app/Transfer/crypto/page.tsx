@@ -33,9 +33,9 @@ import {
   $ → Crypto • Deposit / Buy (BTC-only) / Swap / Send (pending review + OTP)
 
   ✅ Checking/Savings pulled from myAccounts(); if missing, fall back to /users/me.balances
-  ✅ Price / BTC holdings seeding from server:
-     - balances.btcPrice  (stored as cents or dollars → normalized via dollarsFromMinor)
-     - balances.cryptoUSD (same scaling) → derive BTC units = cryptoUSD / btcPrice
+  ✅ Holdings seeded from per-coin balances on User.balances:
+     - cryptoBTC, cryptoETH, cryptoUSDC, cryptoUSDT, cryptoSOL, ...
+  ✅ Prices are live from CoinGecko; dashboard crypto bar = Σ(holdings[sym] * price[sym])
 ----------------------------------------------------------------------------- */
 
 type Quote = {
@@ -82,13 +82,10 @@ type PendingDelta = {
 /* ------------------------------- Helpers ------------------------------- */
 
 /**
- * Normalize a numeric balance/price snapshot from the backend.
+ * Normalize a numeric balance/price snapshot from connectors / external APIs.
  *
  * - If it's a big integer (e.g. 1010000) we treat it as "cents" → divide by 100.
  * - If it's already a "normal looking" value (e.g. 10_500.25), we leave it alone.
- *
- * This keeps BTC price / cryptoUSD in sync with your ledger even if you change
- * storage from dollars → cents later.
  */
 function dollarsFromMinor(n: any): number {
   const v = Number(n);
@@ -100,6 +97,37 @@ function dollarsFromMinor(n: any): number {
   }
 
   return v;
+}
+
+/** Build holdings map (symbol → units) from User.balances.* */
+function buildHoldingsFromBalances(balances: any): Holdings {
+  if (!balances || typeof balances !== "object") return {};
+
+  const h: Holdings = {};
+  const n = (v: any) => {
+    const num = Number(v);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  if (balances.cryptoBTC) h.BTC = n(balances.cryptoBTC);
+  if (balances.cryptoETH) h.ETH = n(balances.cryptoETH);
+  if (balances.cryptoUSDC) h.USDC = n(balances.cryptoUSDC);
+  if (balances.cryptoUSDT) h.USDT = n(balances.cryptoUSDT);
+  if (balances.cryptoSOL) h.SOL = n(balances.cryptoSOL);
+  if (balances.cryptoLTC) h.LTC = n(balances.cryptoLTC);
+  if (balances.cryptoXRP) h.XRP = n(balances.cryptoXRP);
+  if (balances.cryptoADA) h.ADA = n(balances.cryptoADA);
+  if (balances.cryptoBNB) h.BNB = n(balances.cryptoBNB);
+  if (balances.cryptoDOGE) h.DOGE = n(balances.cryptoDOGE);
+
+  // Only keep non-zero coins so cards appear only when coin actually exists
+  Object.keys(h).forEach((sym) => {
+    if (!h[sym] || Math.abs(h[sym]) < 1e-12) {
+      delete h[sym];
+    }
+  });
+
+  return h;
 }
 
 export default function CryptoFlowsPage() {
@@ -257,12 +285,12 @@ export default function CryptoFlowsPage() {
           setBtcAddress(lsAddr);
         }
 
-        // 🔹 Server balances snapshot
+        // 🔹 Server balances snapshot (fiat + per-coin native units)
         const b = u?.balances || {};
 
-        // These might be stored as cents or plain dollars → normalize
-        const serverCheckingUSD = dollarsFromMinor(b?.checking);
-        const serverSavingsUSD = dollarsFromMinor(b?.savings);
+        // checking / savings are stored as major USD in your model
+        const serverCheckingUSD = Number(b?.checking || 0);
+        const serverSavingsUSD = Number(b?.savings || 0);
 
         if (serverCheckingUSD > 0 || serverSavingsUSD > 0) {
           // Use these only if accounts API didn't already set values
@@ -270,31 +298,17 @@ export default function CryptoFlowsPage() {
           setSavingsBalance((prev) => (prev > 0 ? prev : serverSavingsUSD));
         }
 
-        // BTC price + crypto notional from ledger (normalized)
-        const serverBtcPriceUSD = dollarsFromMinor(b?.btcPrice);
-        const serverCryptoUSD = dollarsFromMinor(b?.cryptoUSD);
-
-        // If backend provides a price, seed BTC price now (CoinGecko will refresh later)
-        if (serverBtcPriceUSD > 0) {
-          setPrices((prev) => ({
-            ...prev,
-            [BTC.id]: { usd: serverBtcPriceUSD },
-          }));
-        }
-
-        // Derive BTC units = total crypto USD / btcPrice (snapshot)
-        if (serverCryptoUSD > 0 && serverBtcPriceUSD > 0) {
-          const units = +(serverCryptoUSD / serverBtcPriceUSD).toFixed(8);
-          if (units > 0) {
-            setHoldings((prev) => {
-              // only override BTC if we don't already have a local value
-              const next = { ...prev, BTC: prev.BTC ?? units };
-              try {
-                localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
-              } catch {}
-              return next;
-            });
-          }
+        // 🔹 Seed holdings from per-coin fields on balances.*
+        const serverHoldings = buildHoldingsFromBalances(b);
+        if (Object.keys(serverHoldings).length > 0) {
+          setHoldings((prev) => {
+            // Server is source of truth; overlay on top of any local cache
+            const next = { ...prev, ...serverHoldings };
+            try {
+              localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
+            } catch {}
+            return next;
+          });
         }
       } catch {
         const lsAddr = localStorage.getItem("hb_btc_wallet") || "";
@@ -342,7 +356,7 @@ export default function CryptoFlowsPage() {
 
   /* ------------------------------- UI helpers ------------------------------- */
 
-  // Extract Checking/Savings with shape fallbacks, treating values as MAJOR units
+  // Extract Checking/Savings with shape fallbacks, treating values as MAJOR-ish units
   function extractFiatBalances(acct: any): { checking: number; savings: number } {
     // possible shapes:
     // 1) { accounts: [{type:'checking'|'savings', balance | balance_minor}, ...] }
@@ -470,10 +484,6 @@ export default function CryptoFlowsPage() {
     const next = { ...pending, [ref]: entry };
     persistPending(next);
     applyHoldingsDelta(deltas); // optimistic update now
-  }
-
-  function pendingDeltaFor(sym: string): number {
-    return Object.values(pending).reduce((sum, p) => sum + (p.deltas[sym] || 0), 0);
   }
 
   function openOtp(refId: string) {
@@ -1273,7 +1283,7 @@ function BalanceCards({
   fmtUnits: (n: number, d?: number) => string;
 }) {
   // Only show cards for coins that actually exist in holdings.
-  // New card appears when user swaps/buys into that symbol.
+  // New card appears when user buys/swaps into that symbol.
   const symbols = Object.keys(holdings).sort((a, b) =>
     a === "BTC" ? -1 : b === "BTC" ? 1 : a.localeCompare(b)
   );

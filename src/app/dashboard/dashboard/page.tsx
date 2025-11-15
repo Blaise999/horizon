@@ -42,7 +42,6 @@ import {
   AlertCircle,
   Calendar,
   Loader2, // ⬅ spinner for avatar upload
-  TrendingUp,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import API, { request, uploadAvatarUnsigned, saveAvatar } from "@/libs/api";
@@ -473,7 +472,7 @@ export default function DashboardPage() {
   const [checkingBalance, setCheckingBalance] = useState<number>(0);
   const [savingsBalance, setSavingsBalance] = useState<number>(0);
 
-  // BTC anchor (for main Crypto card)
+  // BTC anchor (for legacy fallback)
   const [btcAmountBase, setBtcAmountBase] = useState<number>(0);
 
   // All crypto holdings by asset id (coin units)
@@ -648,7 +647,7 @@ export default function DashboardPage() {
     [checkingBalance, savingsBalance]
   );
 
-  // 🔢 Live crypto pricing for ALL holdings (BTC still anchor for the card)
+  // 🔢 Live crypto pricing for ALL holdings
   const assetIds = useMemo(
     () => Object.keys(cryptoHoldings),
     [cryptoHoldings]
@@ -669,13 +668,27 @@ export default function DashboardPage() {
     }, 0);
   }, [perAsset]);
 
-  // BTC slice for the main Crypto card (logo stays BTC)
-  const btcData = (perAsset as any)?.bitcoin || {};
-  const livePrice = Number(btcData.price ?? 0);
-  const liveUsd = Number(btcData.usdValue ?? 0);
-  const change24h = Number.isFinite(Number(btcData.change24h))
-    ? Number(btcData.change24h)
-    : undefined;
+  // Portfolio-wide 24h % change (value-weighted across assets)
+  const portfolioChange24h = useMemo(() => {
+    if (!perAsset) return null;
+    if (!totalCryptoUsd) return null;
+
+    let weighted = 0;
+    let hasAny = false;
+
+    Object.values(perAsset).forEach((asset: any) => {
+      const value = Number(asset?.usdValue ?? 0);
+      const pct = Number(asset?.change24h);
+      if (!Number.isFinite(value) || value <= 0) return;
+      if (!Number.isFinite(pct)) return;
+      const weight = value / totalCryptoUsd;
+      weighted += weight * pct;
+      hasAny = true;
+    });
+
+    if (!hasAny) return null;
+    return weighted;
+  }, [perAsset, totalCryptoUsd]);
 
   const totalAssets = totalFiat + totalCryptoUsd;
 
@@ -900,7 +913,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Enhanced Accounts - Larger icons, subtitles with details, subtle hover animations, crypto with placeholder sparkline */}
+          {/* Enhanced Accounts - Larger icons, subtitles with details, subtle hover animations, crypto with portfolio view */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <AccountCard
               label="Checking"
@@ -922,10 +935,9 @@ export default function DashboardPage() {
               label="Crypto"
               color="#F7931A"
               icon={<Bitcoin size={24} />}
-              btcAmount={btcAmountBase}
-              usdValue={liveUsd}
-              price={livePrice}
-              change24h={change24h}
+              totalUsd={totalCryptoUsd}
+              change24h={portfolioChange24h ?? undefined}
+              assetsCount={assetIds.length}
               loading={priceLoading}
               onClick={openCrypto}
             />
@@ -1023,7 +1035,7 @@ export default function DashboardPage() {
           <div className="mt-6 pt-4 border-t border-white/10">
             <div className="text-sm text-white/70 mb-2">Monthly Trend</div>
             <div className="h-20 flex items-center justify-center text-white/50 text-xs">
-              <TrendingUp size={16} className="mr-2" />
+              {/* Icon removed from imports; simple placeholder text here */}
               Interactive chart coming soon
             </div>
           </div>
@@ -1440,30 +1452,28 @@ function AccountCard({
   );
 }
 
-/** CryptoCard — Enhanced with placeholder sparkline SVG for modern feel */
+/** CryptoCard — Portfolio view: total USD + 24h change */
 function CryptoCard({
   label,
   color,
   icon,
-  btcAmount,
-  usdValue,
-  price,
+  totalUsd,
   change24h,
   loading,
+  assetsCount,
   onClick,
 }: {
   label: string;
   color: string;
   icon: ReactNode;
-  btcAmount: number;
-  usdValue: number;
-  price: number;
-  change24h?: number;
+  totalUsd: number;
+  change24h?: number | null;
   loading?: boolean;
+  assetsCount?: number;
   onClick?: () => void;
 }) {
-  // Normalise the optional prop into a local value
-  const change24hValue = typeof change24h === "number" ? change24h : null;
+  const change24hValue =
+    typeof change24h === "number" && isFinite(change24h) ? change24h : null;
 
   const changeTone =
     change24hValue !== null
@@ -1478,6 +1488,11 @@ function CryptoCard({
         ? "#33D69F"
         : "#FF4D4F"
       : "#FFFFFF40"; // fallback when change24h is undefined
+
+  const assetsLabel =
+    typeof assetsCount === "number" && assetsCount > 0
+      ? `${assetsCount} asset${assetsCount > 1 ? "s" : ""} tracked`
+      : "No holdings yet";
 
   return (
     <button
@@ -1495,16 +1510,11 @@ function CryptoCard({
       </div>
 
       <div className="text-3xl font-bold mt-4">
-        {loading ? "…" : `$${usdValue.toLocaleString()}`}
+        {loading ? "…" : `$${totalUsd.toLocaleString()}`}
       </div>
 
       <div className="text-xs text-white/60 mt-2 flex flex-col">
-        <span className="font-medium">
-          {btcAmount ? btcAmount.toFixed(8) : "0.00000000"} BTC
-        </span>
-        <span>
-          {loading ? "Updating…" : `@ $${price.toLocaleString()}`}
-        </span>
+        <span className="font-medium">{assetsLabel}</span>
 
         {change24hValue !== null && (
           <span className={`${changeTone} mt-0.5`}>
