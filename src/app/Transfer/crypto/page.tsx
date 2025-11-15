@@ -322,9 +322,10 @@ export default function CryptoFlowsPage() {
   // Extract Checking/Savings with shape fallbacks, treating values as MAJOR units
   function extractFiatBalances(acct: any): { checking: number; savings: number } {
     // possible shapes:
-    // 1) { accounts: [{type:'checking'|'savings', balance}, ...] }
-    // 2) [{ accountType:'checking', available }, ...]
-    // 3) { checking: {balance}, savings: {balance} }
+    // 1) { accounts: [{type:'checking'|'savings', balance | balance_minor}, ...] }
+    // 2) [{ accountType:'checking', available | available_minor }, ...]
+    // 3) { checking: {balance | balance_minor}, savings: {balance | balance_minor} }
+
     const list: any[] =
       (acct?.accounts && Array.isArray(acct.accounts) && acct.accounts) ||
       (Array.isArray(acct) ? acct : []) ||
@@ -341,13 +342,19 @@ export default function CryptoFlowsPage() {
     const kc = keyed?.checking;
     const ks = keyed?.savings;
 
+    // Read a "major-ish" USD value from any of the usual fields
     const readMajor = (a: any): number | undefined => {
       if (!a) return undefined;
+
       const raw =
+        a.balance_minor ??
+        a.available_minor ??
+        a.minor ??
         a.balance ??
         a.available ??
         a.current ??
         a.ledger;
+
       const n = Number(raw);
       return Number.isFinite(n) ? n : undefined;
     };
@@ -381,7 +388,9 @@ export default function CryptoFlowsPage() {
     const flat =
       (typeof user.btc === "string" && user.btc.length > 8 && user.btc) ||
       (typeof user.btcAddress === "string" && user.btcAddress.length > 8 && user.btcAddress) ||
-      (typeof user.bitcoinAddress === "string" && user.bitcoinAddress.length > 8 && user.bitcoinAddress) ||
+      (typeof user.bitcoinAddress === "string" &&
+        user.bitcoinAddress.length > 8 &&
+        user.bitcoinAddress) ||
       null;
 
     return addrFromWalletString || fromKeyField || fromObjShape || flat || null;
@@ -696,7 +705,13 @@ export default function CryptoFlowsPage() {
             </div>
 
             {/* ====== Balance Cards (crypto holdings) ====== */}
-            <BalanceCards holdings={holdings} prices={prices} pending={pending} formatFiat={formatFiat} fmtUnits={fmtUnits} />
+            <BalanceCards
+              holdings={holdings}
+              prices={prices}
+              pending={pending}
+              formatFiat={formatFiat}
+              fmtUnits={fmtUnits}
+            />
 
             {/* Controls */}
             <div className="mt-8 grid md:grid-cols-[420px,1fr] gap-6">
@@ -705,7 +720,9 @@ export default function CryptoFlowsPage() {
                 {/* Price snapshot */}
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-white/70">BTC price</div>
-                  <div className="text-base font-medium">{btcPrice ? formatFiat(btcPrice) : "—"}</div>
+                  <div className="text-base font-medium">
+                    {btcPrice ? formatFiat(btcPrice) : "—"}
+                  </div>
                 </div>
 
                 {/* Fiat balances (exact from API) */}
@@ -1013,10 +1030,7 @@ export default function CryptoFlowsPage() {
                           <div className="mt-1">
                             1 {fromCoin.symbol} ≈{" "}
                             {toPrice > 0 && fromPrice > 0
-                              ? fmtUnits(
-                                  fromPrice / toPrice,
-                                  toCoin.decimals ?? 6
-                                )
+                              ? fmtUnits(fromPrice / toPrice, toCoin.decimals ?? 6)
                               : "—"}{" "}
                             {toCoin.symbol}
                           </div>
