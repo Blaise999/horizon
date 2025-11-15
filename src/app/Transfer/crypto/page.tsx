@@ -85,7 +85,7 @@ type PendingDelta = {
 // cents → dollars (quick convert for server snapshots on /users/me.balances)
 function dollarsFromMinor(n: any): number {
   const v = Number(n);
-  return Number.isFinite(v) ? Math.round(v) / 100 : 0;
+  return Number.isFinite(v) ? v : 0;
 }
 
 export default function CryptoFlowsPage() {
