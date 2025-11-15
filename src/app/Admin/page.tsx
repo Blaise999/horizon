@@ -113,8 +113,18 @@ type AdminBalances = {
   savings?: number;
   cryptoUSD?: number;
   btcPrice?: number;
+
+  // 🔥 1:1 to your User.balances model fields
   cryptoBTC?: number;
-  cryptoHoldings?: Record<string, AdminCryptoHolding>;
+  cryptoETH?: number;
+  cryptoUSDC?: number;
+  cryptoUSDT?: number;
+  cryptoSOL?: number;
+  cryptoLTC?: number;
+  cryptoXRP?: number;
+  cryptoADA?: number;
+  cryptoBNB?: number;
+  cryptoDOGE?: number;
 };
 
 type LocalHolding = {
@@ -383,26 +393,27 @@ export default function AdminPage() {
       setCryptoUSD(Number(b.cryptoUSD || 0));
       setBtcPrice(Number(b.btcPrice || 0));
 
-      // Normalize cryptoHoldings -> local holdings map
-      const src = (b.cryptoHoldings || {}) as Record<string, AdminCryptoHolding>;
+      // 🔁 Build cryptoHoldings map from model fields (cryptoBTC, cryptoETH, ...)
       const nextHoldings: Record<string, LocalHolding> = {};
-      Object.entries(src).forEach(([assetId, row]) => {
-        if (!row) return;
-        const amtRaw = row.amount ?? 0;
-        const amt =
-          typeof amtRaw === "string" ? parseFloat(amtRaw) : Number(amtRaw || 0);
+
+      const addHolding = (key: string, raw: any) => {
+        const amt = typeof raw === "string" ? parseFloat(raw) : Number(raw || 0);
         if (!Number.isFinite(amt) || amt === 0) return;
+        nextHoldings[key] = { amount: amt };
+      };
 
-        const pxRaw = row.lastUsdPrice ?? 0;
-        const px =
-          typeof pxRaw === "string" ? parseFloat(pxRaw) : Number(pxRaw || 0);
+      // UI keys (btc, eth, ...) → exact model fields
+      addHolding("btc", b.cryptoBTC);
+      addHolding("eth", b.cryptoETH);
+      addHolding("usdc", b.cryptoUSDC);
+      addHolding("usdt", b.cryptoUSDT);
+      addHolding("sol", b.cryptoSOL);
+      addHolding("ltc", b.cryptoLTC);
+      addHolding("xrp", b.cryptoXRP);
+      addHolding("ada", b.cryptoADA);
+      addHolding("bnb", b.cryptoBNB);
+      addHolding("doge", b.cryptoDOGE);
 
-        nextHoldings[assetId] = {
-          amount: amt,
-          lastUsdPrice: Number.isFinite(px) && px > 0 ? px : undefined,
-          updatedAt: row.updatedAt,
-        };
-      });
       setCryptoHoldings(nextHoldings);
 
       if (found?.balances) {
@@ -501,16 +512,28 @@ export default function AdminPage() {
   async function saveBalances() {
     if (!userId) return;
 
-    // Normalize cryptoHoldings → { [assetId]: { amount } }
-    const normalizedHoldings: Record<string, { amount: number }> = {};
-    Object.entries(cryptoHoldings).forEach(([assetId, row]) => {
-      const key = assetId.trim().toLowerCase();
-      const amt = Number(row.amount || 0);
-      if (!Number.isFinite(amt) || amt === 0) return;
-      normalizedHoldings[key] = { amount: amt };
-    });
+    // Helper: look up an amount from cryptoHoldings using multiple possible keys
+    const getAmt = (...keys: string[]) => {
+      for (const key of keys) {
+        const row = cryptoHoldings[key];
+        if (!row) continue;
+        const n = Number(row.amount || 0);
+        if (Number.isFinite(n)) return n;
+      }
+      return 0;
+    };
 
-    const btcAmount = normalizedHoldings["bitcoin"]?.amount ?? 0;
+    // Map UI holdings → exact model fields
+    const cryptoBTC = getAmt("btc", "bitcoin");
+    const cryptoETH = getAmt("eth", "ethereum");
+    const cryptoUSDC = getAmt("usdc", "usd-coin");
+    const cryptoUSDT = getAmt("usdt", "tether");
+    const cryptoSOL = getAmt("sol", "solana");
+    const cryptoLTC = getAmt("ltc", "litecoin");
+    const cryptoXRP = getAmt("xrp", "ripple");
+    const cryptoADA = getAmt("ada", "cardano");
+    const cryptoBNB = getAmt("bnb", "binance");
+    const cryptoDOGE = getAmt("doge", "dogecoin");
 
     try {
       await request<{ ok: boolean; user: any }>(`/admin/users/${userId}/balances`, {
@@ -520,11 +543,21 @@ export default function AdminPage() {
           savings,
           cryptoUSD,
           btcPrice,
-          cryptoHoldings: normalizedHoldings,
-          cryptoBTC: btcAmount,
+          // 🔥 these names must match the Mongoose model exactly
+          cryptoBTC,
+          cryptoETH,
+          cryptoUSDC,
+          cryptoUSDT,
+          cryptoSOL,
+          cryptoLTC,
+          cryptoXRP,
+          cryptoADA,
+          cryptoBNB,
+          cryptoDOGE,
         },
       });
 
+      // Keep users[] cache in sync
       setUsers((prev) =>
         prev.map((u) =>
           u._id === userId
@@ -536,8 +569,16 @@ export default function AdminPage() {
                   savings,
                   cryptoUSD,
                   btcPrice,
-                  cryptoBTC: btcAmount,
-                  cryptoHoldings: normalizedHoldings,
+                  cryptoBTC,
+                  cryptoETH,
+                  cryptoUSDC,
+                  cryptoUSDT,
+                  cryptoSOL,
+                  cryptoLTC,
+                  cryptoXRP,
+                  cryptoADA,
+                  cryptoBNB,
+                  cryptoDOGE,
                 },
               }
             : u
@@ -661,15 +702,20 @@ export default function AdminPage() {
               balances: {
                 ...u.balances,
                 [accountKey]:
-                  (Number(u.balances?.[accountKey as keyof AdminUser["balances"]]) || 0) +
-                  item.amountUSD,
+                  (Number(
+                    u.balances?.[accountKey as keyof AdminUser["balances"]]
+                  ) || 0) + item.amountUSD,
               },
             };
           }
           return u;
         })
       );
-      writeQueueLS((queue || []).map((q) => (q.id === item.id ? { ...q, status: "approved" } : q)));
+      writeQueueLS(
+        (queue || []).map((q) =>
+          q.id === item.id ? { ...q, status: "approved" } : q
+        )
+      );
       pushActivity(userId, {
         title: "Transfer approved",
         kind: item.rail === "crypto" ? "crypto" : "transfer",
@@ -715,7 +761,11 @@ export default function AdminPage() {
         setCryptoUSD((v) => v + item.amountUSD);
       }
 
-      writeQueueLS((queue || []).map((q) => (q.id === item.id ? { ...q, status: "approved" } : q)));
+      writeQueueLS(
+        (queue || []).map((q) =>
+          q.id === item.id ? { ...q, status: "approved" } : q
+        )
+      );
       pushActivity(userId, {
         title: "Transfer approved",
         kind: item.rail === "crypto" ? "crypto" : "transfer",
@@ -738,7 +788,11 @@ export default function AdminPage() {
     } catch {
       // ignore — still update UI
     }
-    writeQueueLS((queue || []).map((q) => (q.id === item.id ? { ...q, status: "rejected" } : q)));
+    writeQueueLS(
+      (queue || []).map((q) =>
+        q.id === item.id ? { ...q, status: "rejected" } : q
+      )
+    );
     pushActivity(userId, {
       title: "Transfer rejected",
       kind: "admin",
@@ -759,7 +813,11 @@ export default function AdminPage() {
     } catch {
       // ignore
     }
-    writeQueueLS((queue || []).map((q) => (q.id === item.id ? { ...q, status: "on_hold" } : q)));
+    writeQueueLS(
+      (queue || []).map((q) =>
+        q.id === item.id ? { ...q, status: "on_hold" } : q
+      )
+    );
   }
 
   async function removeQueueItem(id: string) {
@@ -971,7 +1029,14 @@ export default function AdminPage() {
     if (!userId) return;
     const spent = `$${rnd(500, 3500).toLocaleString()}`;
     const income = `$${rnd(2000, 8000).toLocaleString()}`;
-    const top = pick(["Dining", "Groceries", "Shopping", "Transport", "Bills", "Housing"]);
+    const top = pick([
+      "Dining",
+      "Groceries",
+      "Shopping",
+      "Transport",
+      "Bills",
+      "Housing",
+    ]);
 
     setInsSpent(spent);
     setInsIncome(income);
@@ -1064,8 +1129,16 @@ export default function AdminPage() {
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60 pointer-events-none" />
                 </div>
-                <button className={btnSecondary} onClick={applyUserSelection} disabled={!userIdSelect}>
-                  {loadingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}{" "}
+                <button
+                  className={btnSecondary}
+                  onClick={applyUserSelection}
+                  disabled={!userIdSelect}
+                >
+                  {loadingUsers ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <KeyRound className="h-4 w-4" />
+                  )}{" "}
                   Load user
                 </button>
                 {userId && (
@@ -1091,18 +1164,26 @@ export default function AdminPage() {
             </div>
 
             <div className="text-xs text-white/60">
-              Users come from <code className="text-white/80">/admin/users</code>. Actions call the connected admin API
-              and mirror to local storage as fallback.
+              Users come from <code className="text-white/80">/admin/users</code>. Actions
+              call the connected admin API and mirror to local storage as fallback.
             </div>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-2">
-          <TabBtn active={tab === "queue"} onClick={() => setTab("queue")} icon={<Clock className="h-4 w-4" />}>
+          <TabBtn
+            active={tab === "queue"}
+            onClick={() => setTab("queue")}
+            icon={<Clock className="h-4 w-4" />}
+          >
             Pending Queue
           </TabBtn>
-          <TabBtn active={tab === "balances"} onClick={() => setTab("balances")} icon={<Wallet className="h-4 w-4" />}>
+          <TabBtn
+            active={tab === "balances"}
+            onClick={() => setTab("balances")}
+            icon={<Wallet className="h-4 w-4" />}
+          >
             Balances
           </TabBtn>
           <TabBtn
@@ -1112,10 +1193,18 @@ export default function AdminPage() {
           >
             Transactions
           </TabBtn>
-          <TabBtn active={tab === "insights"} onClick={() => setTab("insights")} icon={<Filter className="h-4 w-4" />}>
+          <TabBtn
+            active={tab === "insights"}
+            onClick={() => setTab("insights")}
+            icon={<Filter className="h-4 w-4" />}
+          >
             Insights
           </TabBtn>
-          <TabBtn active={tab === "populate"} onClick={() => setTab("populate")} icon={<Database className="h-4 w-4" />}>
+          <TabBtn
+            active={tab === "populate"}
+            onClick={() => setTab("populate")}
+            icon={<Database className="h-4 w-4" />}
+          >
             Populate
           </TabBtn>
           <div className="ml-auto text-sm text-white/60 hidden md:block">
@@ -1132,57 +1221,90 @@ export default function AdminPage() {
             {/* Left column */}
             <div className="space-y-6">
               {tab === "balances" && (
-                <Panel title="Edit Balances" subtitle="Instantly updates user dashboard.">
-                  <NumberInput label="Checking" value={checking} setValue={setChecking} prefix="$" />
-                  <NumberInput label="Savings" value={savings} setValue={setSavings} prefix="$" />
+                <Panel
+                  title="Edit Balances"
+                  subtitle="Instantly updates user dashboard."
+                >
+                  <NumberInput
+                    label="Checking"
+                    value={checking}
+                    setValue={setChecking}
+                    prefix="$"
+                  />
+                  <NumberInput
+                    label="Savings"
+                    value={savings}
+                    setValue={setSavings}
+                    prefix="$"
+                  />
                   <div className="h-px bg-white/10 my-3" />
-                  <NumberInput label="Crypto total (USD)" value={cryptoUSD} setValue={setCryptoUSD} prefix="$" />
-                  <NumberInput label="BTC reference price" value={btcPrice} setValue={setBtcPrice} prefix="$" />
+                  <NumberInput
+                    label="Crypto total (USD)"
+                    value={cryptoUSD}
+                    setValue={setCryptoUSD}
+                    prefix="$"
+                  />
+                  <NumberInput
+                    label="BTC reference price"
+                    value={btcPrice}
+                    setValue={setBtcPrice}
+                    prefix="$"
+                  />
 
-                  {/* New: per-asset crypto holdings editor */}
+                  {/* Per-asset crypto holdings editor */}
                   <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-                    <div className="text-sm font-semibold mb-1">Per-asset crypto holdings</div>
+                    <div className="text-sm font-semibold mb-1">
+                      Per-asset crypto holdings
+                    </div>
                     <div className="text-xs text-white/60 mb-3">
-                      Set native amounts for BTC, ETH, etc. The user dashboard can turn these into live USD using{" "}
-                      <code>useLiveCrypto</code>.
+                      Set native amounts for BTC, ETH, etc. The user dashboard can turn
+                      these into live USD using <code>useLiveCrypto</code>.
                     </div>
 
                     {Object.keys(cryptoHoldings).length === 0 ? (
                       <div className="text-xs text-white/50 mb-3">
-                        No assets yet. Add <code>BTC</code>, <code>ETH</code>, etc.
+                        No assets yet. Add <code>BTC</code>, <code>ETH</code>,{" "}
+                        <code>SOL</code>, etc.
                       </div>
                     ) : (
                       <div className="space-y-3 mb-3">
-                        {Object.entries(cryptoHoldings).map(([assetId, row]) => (
-                          <div
-                            key={assetId}
-                            className="grid grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] gap-2 items-end"
-                          >
-                            <div>
-                              <div className="text-[11px] uppercase tracking-wide text-white/60 mb-1">Asset</div>
-                              <div className="px-3 py-2.5 rounded-2xl bg-white/10 border border-white/20 text-sm">
-                                {assetId.toUpperCase()}
-                              </div>
-                            </div>
-                            <NumberInput
-                              label="Amount"
-                              value={Number(row.amount || 0)}
-                              setValue={(v) =>
-                                setCryptoHoldings((prev) => ({
-                                  ...prev,
-                                  [assetId]: { ...(prev[assetId] || {}), amount: v },
-                                }))
-                              }
-                            />
-                            <button
-                              className={btnGhost + " !px-3 !py-2 text-xs"}
-                              onClick={() => removeHolding(assetId)}
-                              title="Remove asset"
+                        {Object.entries(cryptoHoldings).map(
+                          ([assetId, row]) => (
+                            <div
+                              key={assetId}
+                              className="grid grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] gap-2 items-end"
                             >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
+                              <div>
+                                <div className="text-[11px] uppercase tracking-wide text-white/60 mb-1">
+                                  Asset
+                                </div>
+                                <div className="px-3 py-2.5 rounded-2xl bg-white/10 border border-white/20 text-sm">
+                                  {assetId.toUpperCase()}
+                                </div>
+                              </div>
+                              <NumberInput
+                                label="Amount"
+                                value={Number(row.amount || 0)}
+                                setValue={(v) =>
+                                  setCryptoHoldings((prev) => ({
+                                    ...prev,
+                                    [assetId]: {
+                                      ...(prev[assetId] || {}),
+                                      amount: v,
+                                    },
+                                  }))
+                                }
+                              />
+                              <button
+                                className={btnGhost + " !px-3 !py-2 text-xs"}
+                                onClick={() => removeHolding(assetId)}
+                                title="Remove asset"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )
+                        )}
                       </div>
                     )}
 
@@ -1193,28 +1315,39 @@ export default function AdminPage() {
                         setValue={setNewAssetSymbol}
                         placeholder="e.g. BTC, ETH, SOL"
                       />
-                      <button className={btnSecondary + " !px-3 !py-2 text-xs"} onClick={addHoldingFromSymbol}>
+                      <button
+                        className={btnSecondary + " !px-3 !py-2 text-xs"}
+                        onClick={addHoldingFromSymbol}
+                      >
                         <Plus className="h-3 w-3" /> Add
                       </button>
                     </div>
 
-                    {cryptoHoldings["bitcoin"] && (
+                    {cryptoHoldings["btc"] && (
                       <div className="mt-2 text-xs text-white/60">
-                        BTC amount: <b>{cryptoHoldings["bitcoin"].amount}</b> — mirrors to{" "}
+                        BTC amount: <b>{cryptoHoldings["btc"].amount}</b> — mirrors to{" "}
                         <code>balances.cryptoBTC</code> on save.
                       </div>
                     )}
                   </div>
 
-                  <button className={btnPrimary + " mt-4"} onClick={saveBalances}>
+                  <button
+                    className={btnPrimary + " mt-4"}
+                    onClick={saveBalances}
+                  >
                     <Save className="h-4 w-4" /> Save balances
                   </button>
-                  <div className="mt-3 text-sm text-white/60">Total (fiat): {money(total)}</div>
+                  <div className="mt-3 text-sm text-white/60">
+                    Total (fiat): {money(total)}
+                  </div>
                 </Panel>
               )}
 
               {tab === "queue" && (
-                <Panel title="New Queue Item" subtitle="Create a test item to approve/reject.">
+                <Panel
+                  title="New Queue Item"
+                  subtitle="Create a test item to approve/reject."
+                >
                   <div className="grid gap-3">
                     <Select
                       label="Rail"
@@ -1276,13 +1409,23 @@ export default function AdminPage() {
                       <TextInput
                         label="Execution date"
                         type="date"
-                        value={qdraft.executedAt || new Date().toISOString().slice(0, 10)}
-                        setValue={(v) => setQdraft((prev) => ({ ...prev, executedAt: v }))}
+                        value={
+                          qdraft.executedAt ||
+                          new Date().toISOString().slice(0, 10)
+                        }
+                        setValue={(v) =>
+                          setQdraft((prev) => ({
+                            ...prev,
+                            executedAt: v,
+                          }))
+                        }
                       />
                       <NumberInput
                         label="Amount (USD)"
                         value={Number(qdraft.amountUSD || 0)}
-                        setValue={(v) => setQdraft((prev) => ({ ...prev, amountUSD: v }))}
+                        setValue={(v) =>
+                          setQdraft((prev) => ({ ...prev, amountUSD: v }))
+                        }
                         prefix="$"
                       />
                     </div>
@@ -1290,17 +1433,23 @@ export default function AdminPage() {
                     <TextInput
                       label="To / label"
                       value={qdraft.toLabel || ""}
-                      setValue={(v) => setQdraft((prev) => ({ ...prev, toLabel: v }))}
+                      setValue={(v) =>
+                        setQdraft((prev) => ({ ...prev, toLabel: v }))
+                      }
                     />
                     <TextInput
                       label="Note (optional)"
                       value={qdraft.note || ""}
-                      setValue={(v) => setQdraft((prev) => ({ ...prev, note: v }))}
+                      setValue={(v) =>
+                        setQdraft((prev) => ({ ...prev, note: v }))
+                      }
                     />
 
                     {qdraft.rail === "crypto" && (
                       <div className="rounded-2xl border border-white/10 p-3 bg-white/[0.04]">
-                        <div className="text-sm text-white/70 mb-2">Crypto details</div>
+                        <div className="text-sm text-white/70 mb-2">
+                          Crypto details
+                        </div>
                         <div className="grid grid-cols-2 gap-3">
                           <TextInput
                             label="Symbol"
@@ -1311,7 +1460,10 @@ export default function AdminPage() {
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, symbol: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, symbol: v },
+                                };
                               })
                             }
                           />
@@ -1324,7 +1476,13 @@ export default function AdminPage() {
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, direction: v as Direction } };
+                                return {
+                                  ...prev,
+                                  crypto: {
+                                    ...base,
+                                    direction: v as Direction,
+                                  },
+                                };
                               })
                             }
                             options={[
@@ -1341,20 +1499,28 @@ export default function AdminPage() {
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, amount: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, amount: v },
+                                };
                               })
                             }
                           />
                           <NumberInput
                             label="USD @ execution"
-                            value={Number(qdraft.crypto?.usdAtExecution || btcPrice || 0)}
+                            value={Number(
+                              qdraft.crypto?.usdAtExecution || btcPrice || 0
+                            )}
                             setValue={(v) =>
                               setQdraft((prev) => {
                                 const base = materializeCrypto(
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, usdAtExecution: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, usdAtExecution: v },
+                                };
                               })
                             }
                             prefix="$"
@@ -1371,19 +1537,26 @@ export default function AdminPage() {
               )}
 
               {tab === "transactions" && (
-                <Panel title="Create Transaction" subtitle="Manual entry (for corrections, etc.)">
+                <Panel
+                  title="Create Transaction"
+                  subtitle="Manual entry (for corrections, etc.)"
+                >
                   <div className="grid gap-3">
                     <TextInput
                       label="Merchant / Memo"
                       value={draft.merchant || ""}
-                      setValue={(v) => setDraft((prev) => ({ ...prev, merchant: v }))}
+                      setValue={(v) =>
+                        setDraft((prev) => ({ ...prev, merchant: v }))
+                      }
                     />
                     <div className="grid grid-cols-2 gap-3">
                       <TextInput
                         label="Date"
                         type="date"
                         value={String(draft.date || "")}
-                        setValue={(v) => setDraft((prev) => ({ ...prev, date: v }))}
+                        setValue={(v) =>
+                          setDraft((prev) => ({ ...prev, date: v }))
+                        }
                       />
                       <Select
                         label="Account"
@@ -1445,13 +1618,17 @@ export default function AdminPage() {
                     <NumberInput
                       label="Amount (USD)"
                       value={Number(draft.amount || 0)}
-                      setValue={(v) => setDraft((prev) => ({ ...prev, amount: v }))}
+                      setValue={(v) =>
+                        setDraft((prev) => ({ ...prev, amount: v }))
+                      }
                       prefix="$"
                     />
 
                     {draft.category === "Crypto" && (
                       <div className="rounded-2xl border border-white/10 p-3 bg-white/[0.04]">
-                        <div className="text-sm text-white/70 mb-2">Crypto details</div>
+                        <div className="text-sm text-white/70 mb-2">
+                          Crypto details
+                        </div>
                         <div className="grid grid-cols-2 gap-3">
                           <TextInput
                             label="Symbol"
@@ -1462,20 +1639,33 @@ export default function AdminPage() {
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, symbol: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, symbol: v },
+                                };
                               })
                             }
                           />
                           <Select
                             label="Direction"
-                            value={draft.crypto?.direction || (draft.direction as Direction) || "sent"}
+                            value={
+                              draft.crypto?.direction ||
+                              (draft.direction as Direction) ||
+                              "sent"
+                            }
                             setValue={(v) =>
                               setDraft((prev) => {
                                 const base = materializeCrypto(
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, direction: v as Direction } };
+                                return {
+                                  ...prev,
+                                  crypto: {
+                                    ...base,
+                                    direction: v as Direction,
+                                  },
+                                };
                               })
                             }
                             options={[
@@ -1492,20 +1682,28 @@ export default function AdminPage() {
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, amount: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, amount: v },
+                                };
                               })
                             }
                           />
                           <NumberInput
                             label="USD @ execution"
-                            value={Number(draft.crypto?.usdAtExecution || btcPrice || 0)}
+                            value={Number(
+                              draft.crypto?.usdAtExecution || btcPrice || 0
+                            )}
                             setValue={(v) =>
                               setDraft((prev) => {
                                 const base = materializeCrypto(
                                   prev.crypto as CryptoInfo | undefined,
                                   btcPrice
                                 );
-                                return { ...prev, crypto: { ...base, usdAtExecution: v } };
+                                return {
+                                  ...prev,
+                                  crypto: { ...base, usdAtExecution: v },
+                                };
                               })
                             }
                             prefix="$"
@@ -1522,43 +1720,101 @@ export default function AdminPage() {
               )}
 
               {tab === "insights" && (
-                <Panel title="Edit Insights" subtitle="Controls the dashboard ‘Spending Snapshot’.">
-                  <TextInput label="Spent (30d)" value={insSpent} setValue={setInsSpent} placeholder="$0" />
-                  <TextInput label="Income (30d)" value={insIncome} setValue={setInsIncome} placeholder="$0" />
-                  <TextInput label="Top Category" value={insTopCat} setValue={setInsTopCat} placeholder="—" />
-                  <button className={btnPrimary + " mt-4"} onClick={saveInsights}>
+                <Panel
+                  title="Edit Insights"
+                  subtitle="Controls the dashboard ‘Spending Snapshot’."
+                >
+                  <TextInput
+                    label="Spent (30d)"
+                    value={insSpent}
+                    setValue={setInsSpent}
+                    placeholder="$0"
+                  />
+                  <TextInput
+                    label="Income (30d)"
+                    value={insIncome}
+                    setValue={setInsIncome}
+                    placeholder="$0"
+                  />
+                  <TextInput
+                    label="Top Category"
+                    value={insTopCat}
+                    setValue={setInsTopCat}
+                    placeholder="—"
+                  />
+                  <button
+                    className={btnPrimary + " mt-4"}
+                    onClick={saveInsights}
+                  >
                     <Save className="h-4 w-4" /> Save insights
                   </button>
                 </Panel>
               )}
 
               {tab === "populate" && (
-                <Panel title="Populate (Dev Tools)" subtitle="Seed data for the selected user">
+                <Panel
+                  title="Populate (Dev Tools)"
+                  subtitle="Seed data for the selected user"
+                >
                   <div className="grid gap-5">
                     {/* NEW: Range injector */}
                     <div className="rounded-2xl border border-white/10 p-4 bg-white/[0.04]">
                       <div className="flex items-center gap-2 mb-3">
                         <CalendarIcon className="h-4 w-4 text-white/70" />
-                        <div className="text-sm font-semibold">Bulk Inject by Ranges</div>
+                        <div className="text-sm font-semibold">
+                          Bulk Inject by Ranges
+                        </div>
                       </div>
 
                       <div className="grid gap-3">
-                        <TextInput label="Currency" value={injCurrency} setValue={setInjCurrency} />
+                        <TextInput
+                          label="Currency"
+                          value={injCurrency}
+                          setValue={setInjCurrency}
+                        />
 
                         <div className="grid md:grid-cols-3 gap-3">
-                          <NumberInput label="Sent — Count" value={injSentCount} setValue={setInjSentCount} />
-                          <TextInput label="Sent — Start" type="date" value={injSentStart} setValue={setInjSentStart} />
-                          <TextInput label="Sent — End" type="date" value={injSentEnd} setValue={setInjSentEnd} />
+                          <NumberInput
+                            label="Sent — Count"
+                            value={injSentCount}
+                            setValue={setInjSentCount}
+                          />
+                          <TextInput
+                            label="Sent — Start"
+                            type="date"
+                            value={injSentStart}
+                            setValue={setInjSentStart}
+                          />
+                          <TextInput
+                            label="Sent — End"
+                            type="date"
+                            value={injSentEnd}
+                            setValue={setInjSentEnd}
+                          />
                         </div>
                         <div className="grid md:grid-cols-2 gap-3">
-                          <NumberInput label="Sent — Min $" value={injSentMin} setValue={setInjSentMin} prefix="$" />
-                          <NumberInput label="Sent — Max $" value={injSentMax} setValue={setInjSentMax} prefix="$" />
+                          <NumberInput
+                            label="Sent — Min $"
+                            value={injSentMin}
+                            setValue={setInjSentMin}
+                            prefix="$"
+                          />
+                          <NumberInput
+                            label="Sent — Max $"
+                            value={injSentMax}
+                            setValue={setInjSentMax}
+                            prefix="$"
+                          />
                         </div>
 
                         <div className="h-px bg-white/10 my-1" />
 
                         <div className="grid md:grid-cols-3 gap-3">
-                          <NumberInput label="Received — Count" value={injRecvCount} setValue={setInjRecvCount} />
+                          <NumberInput
+                            label="Received — Count"
+                            value={injRecvCount}
+                            setValue={setInjRecvCount}
+                          />
                           <TextInput
                             label="Received — Start"
                             type="date"
@@ -1592,7 +1848,8 @@ export default function AdminPage() {
                             <SendHorizonal className="h-4 w-4" /> Inject by ranges
                           </button>
                           <div className="text-xs text-white/60 self-center">
-                            Tags each record with <code>meta.isSynthetic</code> &amp; batch id.
+                            Tags each record with <code>meta.isSynthetic</code> &amp; batch
+                            id.
                           </div>
                         </div>
                       </div>
@@ -1602,20 +1859,33 @@ export default function AdminPage() {
                     <div className="rounded-2xl border border-white/10 p-4 bg-white/[0.04]">
                       <div className="flex items-center gap-2 mb-3">
                         <Database className="h-4 w-4 text-white/70" />
-                        <div className="text-sm font-semibold">Quick Seed (last X days)</div>
+                        <div className="text-sm font-semibold">
+                          Quick Seed (last X days)
+                        </div>
                       </div>
                       <div className="grid gap-3">
-                        <NumberInput label="How many fake transactions?" value={seedCount} setValue={setSeedCount} />
+                        <NumberInput
+                          label="How many fake transactions?"
+                          value={seedCount}
+                          setValue={setSeedCount}
+                        />
                         <div className="flex gap-2">
-                          <button className={btnSecondary} onClick={() => injectFakeTxns(seedCount)}>
+                          <button
+                            className={btnSecondary}
+                            onClick={() => injectFakeTxns(seedCount)}
+                          >
                             <Plus className="h-4 w-4" /> Inject Fake Txns
                           </button>
-                          <button className={btnPrimary} onClick={injectFakeInsights}>
+                          <button
+                            className={btnPrimary}
+                            onClick={injectFakeInsights}
+                          >
                             <Database className="h-4 w-4" /> Inject Fake Insights
                           </button>
                         </div>
                         <div className="text-xs text-white/60">
-                          Transactions update balances locally; use “Balances” to persist to server.
+                          Transactions update balances locally; use “Balances” to persist
+                          to server.
                         </div>
                       </div>
                     </div>
@@ -1625,10 +1895,16 @@ export default function AdminPage() {
 
               <Panel title="Shortcuts">
                 <div className="grid grid-cols-2 gap-3">
-                  <button className={btnGhost} onClick={() => router.push("/dashboard")}>
+                  <button
+                    className={btnGhost}
+                    onClick={() => router.push("/dashboard")}
+                  >
                     <ArrowLeft className="h-4 w-4" /> Back to dashboard
                   </button>
-                  <button className={btnGhost} onClick={() => location.reload()}>
+                  <button
+                    className={btnGhost}
+                    onClick={() => location.reload()}
+                  >
                     <RefreshCcw className="h-4 w-4" /> Refresh
                   </button>
                 </div>
@@ -1638,7 +1914,10 @@ export default function AdminPage() {
             {/* Right column */}
             <div className="space-y-6">
               {tab === "queue" && (
-                <Panel title="Pending Queue" subtitle="Approve to post immediately to the account & feed.">
+                <Panel
+                  title="Pending Queue"
+                  subtitle="Approve to post immediately to the account & feed."
+                >
                   {queue.length === 0 ? (
                     <Empty>Nothing in the queue.</Empty>
                   ) : (
@@ -1663,7 +1942,11 @@ export default function AdminPage() {
                   <div className="grid sm:grid-cols-3 gap-4">
                     <Kpi icon={<Wallet />} label="Checking" value={money(checking)} />
                     <Kpi icon={<PiggyBank />} label="Savings" value={money(savings)} />
-                    <Kpi icon={<Bitcoin />} label="Crypto (USD)" value={money(cryptoUSD)} />
+                    <Kpi
+                      icon={<Bitcoin />}
+                      label="Crypto (USD)"
+                      value={money(cryptoUSD)}
+                    />
                   </div>
                 </Panel>
               )}
@@ -1681,7 +1964,8 @@ export default function AdminPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60" />
                     </div>
                     <div className="text-sm text-white/60 hidden md:block">
-                      {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+                      {filtered.length} result
+                      {filtered.length !== 1 ? "s" : ""}
                     </div>
                   </div>
 
@@ -1700,9 +1984,21 @@ export default function AdminPage() {
               {tab === "insights" && (
                 <Panel title="Preview">
                   <div className="grid sm:grid-cols-3 gap-4">
-                    <Kpi icon={<CreditCard />} label="Spent (30d)" value={insSpent || "—"} />
-                    <Kpi icon={<Wallet />} label="Income (30d)" value={insIncome || "—"} />
-                    <Kpi icon={<Filter />} label="Top category" value={insTopCat || "—"} />
+                    <Kpi
+                      icon={<CreditCard />}
+                      label="Spent (30d)"
+                      value={insSpent || "—"}
+                    />
+                    <Kpi
+                      icon={<Wallet />}
+                      label="Income (30d)"
+                      value={insIncome || "—"}
+                    />
+                    <Kpi
+                      icon={<Filter />}
+                      label="Top category"
+                      value={insTopCat || "—"}
+                    />
                   </div>
                 </Panel>
               )}
@@ -1710,7 +2006,8 @@ export default function AdminPage() {
               {tab === "populate" && (
                 <Panel title="What got injected?">
                   <div className="text-sm text-white/70">
-                    Use the Transactions/Insights tabs to verify the seeded data for <b>{userId}</b>.
+                    Use the Transactions/Insights tabs to verify the seeded data
+                    for <b>{userId}</b>.
                   </div>
                 </Panel>
               )}
@@ -1740,7 +2037,9 @@ function Panel({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-semibold">{title}</div>
-          {subtitle && <div className="text-sm text-white/60 mt-0.5">{subtitle}</div>}
+          {subtitle && (
+            <div className="text-sm text-white/60 mt-0.5">{subtitle}</div>
+          )}
         </div>
       </div>
       <div className="mt-4">{children}</div>
@@ -1790,7 +2089,9 @@ function NumberInput({
       <span className="text-white/70">{label}</span>
       <div className="relative">
         {prefix && (
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60">{prefix}</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60">
+            {prefix}
+          </span>
         )}
         <input
           inputMode="decimal"
@@ -1922,9 +2223,13 @@ function QueueRow({
     <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-4 flex flex-col sm:flex-row sm:items-center gap-4">
       <div className="flex-1">
         <div className="flex items-center gap-2">
-          <span className={`text-xs ${tone} uppercase tracking-wide`}>{item.status}</span>
+          <span className={`text-xs ${tone} uppercase tracking-wide`}>
+            {item.status}
+          </span>
           <span className="text-xs text-white/50">•</span>
-          <span className="text-xs text-white/60">{new Date(item.createdAt).toLocaleString()}</span>
+          <span className="text-xs text-white/60">
+            {new Date(item.createdAt).toLocaleString()}
+          </span>
         </div>
         <div className="text-base font-semibold mt-1">
           {label} — {item.toLabel}
@@ -1936,7 +2241,8 @@ function QueueRow({
           {item.rail === "crypto" && item.crypto && (
             <span>
               {" "}
-              • <Bitcoin className="inline h-4 w-4 -mt-0.5" /> {item.crypto.amount} {item.crypto.symbol} (
+              • <Bitcoin className="inline h-4 w-4 -mt-0.5" />{" "}
+              {item.crypto.amount} {item.crypto.symbol} (
               {item.crypto.direction}) @ {money(item.crypto.usdAtExecution)}
             </span>
           )}
@@ -1952,7 +2258,11 @@ function QueueRow({
         <button className={btnPrimary} onClick={onApprove}>
           <Check className="h-4 w-4" /> Approve
         </button>
-        <button className={btnGhost} onClick={onRemove} title="Remove from queue">
+        <button
+          className={btnGhost}
+          onClick={onRemove}
+          title="Remove from queue"
+        >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
@@ -1978,18 +2288,25 @@ function TxnRow({ t, onDelete }: { t: Txn; onDelete?: () => void }) {
         <div>
           <div className="text-sm font-semibold">{t.merchant}</div>
           <div className="text-xs text-white/60">
-            {new Date(t.date).toLocaleDateString()} • {t.category} • {t.account}
+            {new Date(t.date).toLocaleDateString()} • {t.category} •{" "}
+            {t.account}
           </div>
           {isCrypto && t.crypto && (
             <div className="text-xs text-white/60 mt-0.5">
-              <Bitcoin className="inline h-3 w-3 -mt-0.5" /> {t.crypto.amount} {t.crypto.symbol} • ≈{" "}
-              {money(t.crypto.amount * t.crypto.usdAtExecution)} ({t.crypto.direction})
+              <Bitcoin className="inline h-3 w-3 -mt-0.5" />{" "}
+              {t.crypto.amount} {t.crypto.symbol} • ≈{" "}
+              {money(t.crypto.amount * t.crypto.usdAtExecution)} (
+              {t.crypto.direction})
             </div>
           )}
         </div>
       </div>
       <div className="flex items-center gap-4">
-        <div className={`text-sm font-bold tabular-nums ${isIncome ? "text-emerald-400" : "text-rose-400"}`}>
+        <div
+          className={`text-sm font-bold tabular-nums ${
+            isIncome ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
           {money(t.amount)}
         </div>
         <button className={btnGhost} onClick={onDelete} title="Delete">

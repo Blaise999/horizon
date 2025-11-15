@@ -191,7 +191,10 @@ export default function CryptoFlowsPage() {
     return isFinite(n) && n >= 0 ? n : 0;
   }, [usd]);
 
-  const buyUnits = useMemo(() => (btcPrice > 0 ? usdValue / btcPrice : 0), [usdValue, btcPrice]);
+  const buyUnits = useMemo(
+    () => (btcPrice > 0 ? usdValue / btcPrice : 0),
+    [usdValue, btcPrice]
+  );
 
   // Swap derived
   const fromCoin = COINS.find((c) => c.id === swapFromId)!;
@@ -210,7 +213,10 @@ export default function CryptoFlowsPage() {
     return fromUnitsNum * (fromPrice / toPrice);
   }, [fromUnitsNum, fromPrice, toPrice]);
 
-  const minReceived = useMemo(() => quoteOut * (1 - slippagePct / 100), [quoteOut, slippagePct]);
+  const minReceived = useMemo(
+    () => quoteOut * (1 - slippagePct / 100),
+    [quoteOut, slippagePct]
+  );
 
   // Must involve BTC
   const swapInvolvesBTC = useMemo(
@@ -226,14 +232,6 @@ export default function CryptoFlowsPage() {
 
     // Initial local fallback name (same pattern as Venmo page)
     setUserName(localStorage.getItem("hb_user_name") || "User");
-
-    // Holdings (persisted locally)
-    try {
-      const raw = localStorage.getItem("hb_crypto_holdings");
-      setHoldings(raw ? JSON.parse(raw) : {});
-    } catch {
-      setHoldings({});
-    }
 
     // Pending (persisted locally)
     try {
@@ -299,17 +297,12 @@ export default function CryptoFlowsPage() {
         }
 
         // 🔹 Seed holdings from per-coin fields on balances.*
+        // Server is ALWAYS source of truth; if it's empty, you have no coins.
         const serverHoldings = buildHoldingsFromBalances(b);
-        if (Object.keys(serverHoldings).length > 0) {
-          setHoldings((prev) => {
-            // Server is source of truth; overlay on top of any local cache
-            const next = { ...prev, ...serverHoldings };
-            try {
-              localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
-            } catch {}
-            return next;
-          });
-        }
+        setHoldings(serverHoldings);
+        try {
+          localStorage.setItem("hb_crypto_holdings", JSON.stringify(serverHoldings));
+        } catch {}
       } catch {
         const lsAddr = localStorage.getItem("hb_btc_wallet") || "";
         setBtcAddress(lsAddr);
@@ -852,7 +845,7 @@ export default function CryptoFlowsPage() {
                         confirmation and internal review.
                       </div>
                       <div className="text-[11px] text-white/40 mt-2">
-                        Source: <span className="font-medium">/users/me</span> (wallets){" "}
+                        Source: <span className="font-medium">/users/me</span>{" "}
                         {btcAddress ? "(live from API)" : "(fallback: local cache)"}
                       </div>
                     </div>
