@@ -194,6 +194,7 @@ export default function CryptoFlowsPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    // Initial local fallback name (same pattern as Venmo page)
     setUserName(localStorage.getItem("hb_user_name") || "User");
 
     // Holdings (persisted locally)
@@ -224,12 +225,26 @@ export default function CryptoFlowsPage() {
       }
     })();
 
-    // BTC deposit address + server balance snapshot seed
+    // BTC deposit address + server balance snapshot seed + name from /users/me
     (async () => {
       setBtcAddrLoading(true);
       try {
-        const user = await meUser();
-        const address = extractBtcAddress(user);
+        const userResp = await meUser();
+        const u: any = (userResp as any)?.user ?? userResp;
+
+        // 🔹 Name from /users/me (mirrors Venmo pattern)
+        const full =
+          [u?.firstName, u?.lastName].filter(Boolean).join(" ").trim() ||
+          u?.fullName ||
+          u?.handle ||
+          "User";
+        setUserName(full);
+        try {
+          localStorage.setItem("hb_user_name", full);
+        } catch {}
+
+        // 🔹 BTC address from /users/me
+        const address = extractBtcAddress(u);
         if (address) {
           setBtcAddress(address);
           try {
@@ -241,7 +256,7 @@ export default function CryptoFlowsPage() {
         }
 
         // 🔹 Server balances snapshot (all appear to be cents → dollars)
-        const b = user?.balances || {};
+        const b = u?.balances || {};
 
         const serverCheckingUSD = dollarsFromMinor(b?.checking);
         const serverSavingsUSD = dollarsFromMinor(b?.savings);
@@ -691,7 +706,7 @@ export default function CryptoFlowsPage() {
               </div>
             </div>
 
-            {/* ====== Balance Cards (new) ====== */}
+            {/* ====== Balance Cards (crypto holdings) ====== */}
             <BalanceCards
               holdings={holdings}
               prices={prices}
@@ -726,7 +741,8 @@ export default function CryptoFlowsPage() {
                 <div className="rounded-xl border border-white/15 bg-white/[0.03] p-3 text-xs text-white/70 flex gap-2">
                   <Info className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
-                    <b>BTC is your base asset.</b> You can swap between BTC and other supported coins. ALT ↔ ALT flows route via BTC, so select BTC on one side of the pair.
+                    <b>BTC is your base asset.</b> You can swap between BTC and other supported coins. ALT ↔ ALT flows route via BTC, so
+                    select BTC on one side of the pair.
                   </div>
                 </div>
 
@@ -1015,7 +1031,7 @@ export default function CryptoFlowsPage() {
                         swapFromId === swapToId ||
                         (holdings[fromCoin.symbol] ?? 0) < fromUnitsNum - 1e-12
                       }
-                      className={`mt-4 w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
+                      className={`mt-4 w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] $(
                         swapInvolvesBTC &&
                         fromUnitsNum > 0 &&
                         fromPrice > 0 &&
@@ -1024,7 +1040,7 @@ export default function CryptoFlowsPage() {
                         (holdings[fromCoin.symbol] ?? 0) >= fromUnitsNum - 1e-12
                           ? ""
                           : "opacity-60 cursor-not-allowed"
-                      }`}
+                      )`}
                       style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
                     >
                       Submit Swap (OTP + admin approval)
