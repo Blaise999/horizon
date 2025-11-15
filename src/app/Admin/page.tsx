@@ -102,6 +102,27 @@ type QueueItem = {
   status: QueueStatus;
 };
 
+type AdminCryptoHolding = {
+  amount?: number | string;
+  lastUsdPrice?: number | string;
+  updatedAt?: string | Date;
+};
+
+type AdminBalances = {
+  checking?: number;
+  savings?: number;
+  cryptoUSD?: number;
+  btcPrice?: number;
+  cryptoBTC?: number;
+  cryptoHoldings?: Record<string, AdminCryptoHolding>;
+};
+
+type LocalHolding = {
+  amount: number;
+  lastUsdPrice?: number;
+  updatedAt?: string | Date;
+};
+
 /** Admin users list response */
 type AdminUser = {
   _id: string;
@@ -109,12 +130,7 @@ type AdminUser = {
   firstName?: string;
   lastName?: string;
   email?: string;
-  balances?: {
-    checking?: number;
-    savings?: number;
-    cryptoUSD?: number;
-    btcPrice?: number;
-  };
+  balances?: AdminBalances;
 };
 
 /* -----------------------------------------------------------------------------
@@ -255,6 +271,8 @@ export default function AdminPage() {
   const [savings, setSavings] = useState<number>(0);
   const [cryptoUSD, setCryptoUSD] = useState<number>(0);
   const [btcPrice, setBtcPrice] = useState<number>(0);
+  const [cryptoHoldings, setCryptoHoldings] = useState<Record<string, LocalHolding>>({});
+  const [newAssetSymbol, setNewAssetSymbol] = useState<string>("");
 
   // Queue + Txns
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -315,8 +333,6 @@ export default function AdminPage() {
       // Normalize: add fullName from first/last if present
       const list: AdminUser[] = raw.map((u: any) => {
         const first = u.firstName ?? u.identity?.name?.firstName ?? "";
-        theLast: {
-        }
         const last = u.lastName ?? u.identity?.name?.lastName ?? "";
         const fullName = [first, last].filter(Boolean).join(" ");
         return {
@@ -360,18 +376,45 @@ export default function AdminPage() {
   const fetchBalancesForUser = useCallback(
     (id: string) => {
       const found = users.find((u) => u._id === id);
+      const b = found?.balances || {};
+
+      setChecking(Number(b.checking || 0));
+      setSavings(Number(b.savings || 0));
+      setCryptoUSD(Number(b.cryptoUSD || 0));
+      setBtcPrice(Number(b.btcPrice || 0));
+
+      // Normalize cryptoHoldings -> local holdings map
+      const src = (b.cryptoHoldings || {}) as Record<string, AdminCryptoHolding>;
+      const nextHoldings: Record<string, LocalHolding> = {};
+      Object.entries(src).forEach(([assetId, row]) => {
+        if (!row) return;
+        const amtRaw = row.amount ?? 0;
+        const amt =
+          typeof amtRaw === "string" ? parseFloat(amtRaw) : Number(amtRaw || 0);
+        if (!Number.isFinite(amt) || amt === 0) return;
+
+        const pxRaw = row.lastUsdPrice ?? 0;
+        const px =
+          typeof pxRaw === "string" ? parseFloat(pxRaw) : Number(pxRaw || 0);
+
+        nextHoldings[assetId] = {
+          amount: amt,
+          lastUsdPrice: Number.isFinite(px) && px > 0 ? px : undefined,
+          updatedAt: row.updatedAt,
+        };
+      });
+      setCryptoHoldings(nextHoldings);
+
       if (found?.balances) {
-        setChecking(Number(found.balances.checking || 0));
-        setSavings(Number(found.balances.savings || 0));
-        setCryptoUSD(Number(found.balances.cryptoUSD || 0));
-        setBtcPrice(Number(found.balances.btcPrice || 0));
         return true;
       }
+
       // Fallback to LS (legacy demo)
       setChecking(Number(localStorage.getItem(k(id, "hb_acc_checking_bal")) || "0"));
       setSavings(Number(localStorage.getItem(k(id, "hb_acc_savings_bal")) || "0"));
       setCryptoUSD(Number(localStorage.getItem(k(id, "hb_acc_crypto_usd")) || "0"));
       setBtcPrice(Number(localStorage.getItem(k(id, "hb_btc_price")) || "0"));
+      setCryptoHoldings({});
       return false;
     },
     [users]
@@ -450,12 +493,25 @@ export default function AdminPage() {
   function clearUser() {
     setUserId("");
     setUserIdSelect("");
+    setCryptoHoldings({});
   }
 
   /* ------------------------------ Save helpers ----------------------------- */
 
   async function saveBalances() {
     if (!userId) return;
+
+    // Normalize cryptoHoldings → { [assetId]: { amount } }
+    const normalizedHoldings: Record<string, { amount: number }> = {};
+    Object.entries(cryptoHoldings).forEach(([assetId, row]) => {
+      const key = assetId.trim().toLowerCase();
+      const amt = Number(row.amount || 0);
+      if (!Number.isFinite(amt) || amt === 0) return;
+      normalizedHoldings[key] = { amount: amt };
+    });
+
+    const btcAmount = normalizedHoldings["bitcoin"]?.amount ?? 0;
+
     try {
       await request<{ ok: boolean; user: any }>(`/admin/users/${userId}/balances`, {
         method: "PATCH",
@@ -464,18 +520,30 @@ export default function AdminPage() {
           savings,
           cryptoUSD,
           btcPrice,
+          cryptoHoldings: normalizedHoldings,
+          cryptoBTC: btcAmount,
         },
       });
+
       setUsers((prev) =>
         prev.map((u) =>
           u._id === userId
             ? {
                 ...u,
-                balances: { checking, savings, cryptoUSD, btcPrice },
+                balances: {
+                  ...(u.balances || {}),
+                  checking,
+                  savings,
+                  cryptoUSD,
+                  btcPrice,
+                  cryptoBTC: btcAmount,
+                  cryptoHoldings: normalizedHoldings,
+                },
               }
             : u
         )
       );
+
       pushActivity(userId, {
         title: "Balances updated",
         kind: "admin",
@@ -509,7 +577,7 @@ export default function AdminPage() {
     const dir: Direction = (qdraft.direction as Direction) || "sent";
     const baseAmount = Number(qdraft.amountUSD || 0);
     const signedAmount =
-      (qdraft.rail === "crypto" ? baseAmount : ensureSigned(baseAmount, dir));
+      qdraft.rail === "crypto" ? baseAmount : ensureSigned(baseAmount, dir);
 
     const payload: any = {
       userId,
@@ -920,6 +988,30 @@ export default function AdminPage() {
     });
   }
 
+  /* ---------------------------- Crypto holdings UX ------------------------- */
+
+  function addHoldingFromSymbol() {
+    const sym = newAssetSymbol.trim();
+    if (!sym) return;
+    const key = sym.toLowerCase();
+    setCryptoHoldings((prev) => {
+      if (prev[key]) return prev;
+      return {
+        ...prev,
+        [key]: { amount: 0 },
+      };
+    });
+    setNewAssetSymbol("");
+  }
+
+  function removeHolding(assetId: string) {
+    setCryptoHoldings((prev) => {
+      const next = { ...prev };
+      delete next[assetId];
+      return next;
+    });
+  }
+
   /* ---------------------------------- UI ----------------------------------- */
 
   return (
@@ -973,8 +1065,8 @@ export default function AdminPage() {
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/60 pointer-events-none" />
                 </div>
                 <button className={btnSecondary} onClick={applyUserSelection} disabled={!userIdSelect}>
-                  {loadingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />} Load
-                  user
+                  {loadingUsers ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}{" "}
+                  Load user
                 </button>
                 {userId && (
                   <button className={btnGhost} onClick={clearUser} title="Clear user">
@@ -1046,6 +1138,74 @@ export default function AdminPage() {
                   <div className="h-px bg-white/10 my-3" />
                   <NumberInput label="Crypto total (USD)" value={cryptoUSD} setValue={setCryptoUSD} prefix="$" />
                   <NumberInput label="BTC reference price" value={btcPrice} setValue={setBtcPrice} prefix="$" />
+
+                  {/* New: per-asset crypto holdings editor */}
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <div className="text-sm font-semibold mb-1">Per-asset crypto holdings</div>
+                    <div className="text-xs text-white/60 mb-3">
+                      Set native amounts for BTC, ETH, etc. The user dashboard can turn these into live USD using{" "}
+                      <code>useLiveCrypto</code>.
+                    </div>
+
+                    {Object.keys(cryptoHoldings).length === 0 ? (
+                      <div className="text-xs text-white/50 mb-3">
+                        No assets yet. Add <code>BTC</code>, <code>ETH</code>, etc.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 mb-3">
+                        {Object.entries(cryptoHoldings).map(([assetId, row]) => (
+                          <div
+                            key={assetId}
+                            className="grid grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] gap-2 items-end"
+                          >
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wide text-white/60 mb-1">Asset</div>
+                              <div className="px-3 py-2.5 rounded-2xl bg-white/10 border border-white/20 text-sm">
+                                {assetId.toUpperCase()}
+                              </div>
+                            </div>
+                            <NumberInput
+                              label="Amount"
+                              value={Number(row.amount || 0)}
+                              setValue={(v) =>
+                                setCryptoHoldings((prev) => ({
+                                  ...prev,
+                                  [assetId]: { ...(prev[assetId] || {}), amount: v },
+                                }))
+                              }
+                            />
+                            <button
+                              className={btnGhost + " !px-3 !py-2 text-xs"}
+                              onClick={() => removeHolding(assetId)}
+                              title="Remove asset"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-[minmax(0,1fr),auto] gap-2 items-end">
+                      <TextInput
+                        label="Add asset"
+                        value={newAssetSymbol}
+                        setValue={setNewAssetSymbol}
+                        placeholder="e.g. BTC, ETH, SOL"
+                      />
+                      <button className={btnSecondary + " !px-3 !py-2 text-xs"} onClick={addHoldingFromSymbol}>
+                        <Plus className="h-3 w-3" /> Add
+                      </button>
+                    </div>
+
+                    {cryptoHoldings["bitcoin"] && (
+                      <div className="mt-2 text-xs text-white/60">
+                        BTC amount: <b>{cryptoHoldings["bitcoin"].amount}</b> — mirrors to{" "}
+                        <code>balances.cryptoBTC</code> on save.
+                      </div>
+                    )}
+                  </div>
+
                   <button className={btnPrimary + " mt-4"} onClick={saveBalances}>
                     <Save className="h-4 w-4" /> Save balances
                   </button>
@@ -1147,7 +1307,10 @@ export default function AdminPage() {
                             value={qdraft.crypto?.symbol || "BTC"}
                             setValue={(v) =>
                               setQdraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, symbol: v } };
                               })
                             }
@@ -1157,7 +1320,10 @@ export default function AdminPage() {
                             value={qdraft.crypto?.direction || "sent"}
                             setValue={(v) =>
                               setQdraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, direction: v as Direction } };
                               })
                             }
@@ -1171,7 +1337,10 @@ export default function AdminPage() {
                             value={Number(qdraft.crypto?.amount || 0)}
                             setValue={(v) =>
                               setQdraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, amount: v } };
                               })
                             }
@@ -1181,7 +1350,10 @@ export default function AdminPage() {
                             value={Number(qdraft.crypto?.usdAtExecution || btcPrice || 0)}
                             setValue={(v) =>
                               setQdraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, usdAtExecution: v } };
                               })
                             }
@@ -1286,7 +1458,10 @@ export default function AdminPage() {
                             value={draft.crypto?.symbol || "BTC"}
                             setValue={(v) =>
                               setDraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, symbol: v } };
                               })
                             }
@@ -1296,7 +1471,10 @@ export default function AdminPage() {
                             value={draft.crypto?.direction || (draft.direction as Direction) || "sent"}
                             setValue={(v) =>
                               setDraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, direction: v as Direction } };
                               })
                             }
@@ -1310,7 +1488,10 @@ export default function AdminPage() {
                             value={Number(draft.crypto?.amount || 0)}
                             setValue={(v) =>
                               setDraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, amount: v } };
                               })
                             }
@@ -1320,7 +1501,10 @@ export default function AdminPage() {
                             value={Number(draft.crypto?.usdAtExecution || btcPrice || 0)}
                             setValue={(v) =>
                               setDraft((prev) => {
-                                const base = materializeCrypto(prev.crypto as CryptoInfo | undefined, btcPrice);
+                                const base = materializeCrypto(
+                                  prev.crypto as CryptoInfo | undefined,
+                                  btcPrice
+                                );
                                 return { ...prev, crypto: { ...base, usdAtExecution: v } };
                               })
                             }
@@ -1389,8 +1573,18 @@ export default function AdminPage() {
                           />
                         </div>
                         <div className="grid md:grid-cols-2 gap-3">
-                          <NumberInput label="Received — Min $" value={injRecvMin} setValue={setInjRecvMin} prefix="$" />
-                          <NumberInput label="Received — Max $" value={injRecvMax} setValue={setInjRecvMax} prefix="$" />
+                          <NumberInput
+                            label="Received — Min $"
+                            value={injRecvMin}
+                            setValue={setInjRecvMin}
+                            prefix="$"
+                          />
+                          <NumberInput
+                            label="Received — Max $"
+                            value={injRecvMax}
+                            setValue={setInjRecvMax}
+                            prefix="$"
+                          />
                         </div>
 
                         <div className="flex gap-2">
@@ -1398,7 +1592,7 @@ export default function AdminPage() {
                             <SendHorizonal className="h-4 w-4" /> Inject by ranges
                           </button>
                           <div className="text-xs text-white/60 self-center">
-                            Tags each record with <code>meta.isSynthetic</code> & batch id.
+                            Tags each record with <code>meta.isSynthetic</code> &amp; batch id.
                           </div>
                         </div>
                       </div>

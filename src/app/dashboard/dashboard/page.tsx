@@ -320,7 +320,8 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const { partyName, partyHandle, bankLast4 } = pickParty(input, direction);
 
   // Name: drop provider-like strings
-  const nameHuman = partyName && !isProviderLabel(partyName) ? partyName : undefined;
+  const nameHuman =
+    partyName && !isProviderLabel(partyName) ? partyName : undefined;
 
   // Handle/email/phone prettification
   let handle = partyHandle;
@@ -471,7 +472,14 @@ export default function DashboardPage() {
   const [setupPercent, setSetupPercent] = useState<number>(0);
   const [checkingBalance, setCheckingBalance] = useState<number>(0);
   const [savingsBalance, setSavingsBalance] = useState<number>(0);
+
+  // BTC anchor (for main Crypto card)
   const [btcAmountBase, setBtcAmountBase] = useState<number>(0);
+
+  // All crypto holdings by asset id (coin units)
+  const [cryptoHoldings, setCryptoHoldings] = useState<Record<string, number>>(
+    {}
+  );
 
   const [accountNumber, setAccountNumber] = useState<string>("");
   const [routingNumber, setRoutingNumber] = useState<string>("");
@@ -545,15 +553,50 @@ export default function DashboardPage() {
         setCheckingBalance(Number(user.balances?.checking || 0));
         setSavingsBalance(Number(user.balances?.savings || 0));
 
-        const baseFromMirror = Number(user?.balances?.cryptoBTC ?? 0);
-        const baseFromHoldings = Number(
-          user?.balances?.cryptoHoldings?.bitcoin?.amount ?? 0
-        );
-        const legacyUsd = Number(user?.balances?.cryptoUSD ?? 0);
-        const legacyPx = Number((user?.balances?.btcPrice as any) ?? 0);
+        // 🔥 Build holdings from per-coin user.balances fields
+        const balances = user.balances || {};
+        const holdings: Record<string, number> = {};
+
+        const addHolding = (id: string, raw: any) => {
+          const n = Number(raw ?? 0);
+          if (Number.isFinite(n) && n > 0) holdings[id] = n;
+        };
+
+        // Per-coin fields (units)
+        addHolding("bitcoin", balances.cryptoBTC);
+        addHolding("ethereum", balances.cryptoETH);
+        addHolding("usd-coin", balances.cryptoUSDC);
+        addHolding("tether", balances.cryptoUSDT);
+        addHolding("solana", balances.cryptoSOL);
+        addHolding("litecoin", balances.cryptoLTC);
+        addHolding("ripple", balances.cryptoXRP);
+        addHolding("cardano", balances.cryptoADA);
+        addHolding("binancecoin", balances.cryptoBNB);
+        addHolding("dogecoin", balances.cryptoDOGE);
+
+        // Optional legacy map: balances.cryptoHoldings = { bitcoin: { amount }, eth: { amount } }
+        const legacyHoldings = balances.cryptoHoldings;
+        if (legacyHoldings && typeof legacyHoldings === "object") {
+          Object.entries(legacyHoldings).forEach(([id, val]) => {
+            const amount =
+              typeof val === "object" && val !== null
+                ? Number((val as any).amount ?? 0)
+                : Number(val as any);
+            addHolding(id, amount);
+          });
+        }
+
+        // Legacy BTC fallback using cryptoUSD / btcPrice
+        const legacyUsd = Number(balances.cryptoUSD ?? 0);
+        const legacyPx = Number((balances.btcPrice as any) ?? 0);
         const baseFromLegacy =
           legacyUsd > 0 && legacyPx > 0 ? legacyUsd / legacyPx : 0;
-        setBtcAmountBase(baseFromMirror || baseFromHoldings || baseFromLegacy || 0);
+        if (!holdings.bitcoin && baseFromLegacy > 0) {
+          holdings.bitcoin = baseFromLegacy;
+        }
+
+        setCryptoHoldings(holdings);
+        setBtcAmountBase(holdings.bitcoin || 0);
 
         const accts = user.accounts as AccountsShape;
         if (accts) {
@@ -605,16 +648,36 @@ export default function DashboardPage() {
     [checkingBalance, savingsBalance]
   );
 
+  // 🔢 Live crypto pricing for ALL holdings (BTC still anchor for the card)
+  const assetIds = useMemo(
+    () => Object.keys(cryptoHoldings),
+    [cryptoHoldings]
+  );
+
   const { perAsset, loading: priceLoading } = useLiveCrypto({
-    ids: ["bitcoin"],
-    amounts: { bitcoin: btcAmountBase },
+    ids: assetIds.length ? assetIds : ["bitcoin"],
+    amounts: assetIds.length ? cryptoHoldings : { bitcoin: btcAmountBase },
     pollMs: 15000,
   });
-  const livePrice = perAsset?.bitcoin?.price ?? 0;
-  const liveUsd = perAsset?.bitcoin?.usdValue ?? 0;
-  const change24h = perAsset?.bitcoin?.change24h;
 
-  const totalAssets = totalFiat + liveUsd;
+  // Total crypto USD across all held assets
+  const totalCryptoUsd = useMemo(() => {
+    if (!perAsset) return 0;
+    return Object.values(perAsset).reduce((sum, asset: any) => {
+      const v = Number(asset?.usdValue ?? 0);
+      return Number.isFinite(v) ? sum + v : sum;
+    }, 0);
+  }, [perAsset]);
+
+  // BTC slice for the main Crypto card (logo stays BTC)
+  const btcData = (perAsset as any)?.bitcoin || {};
+  const livePrice = Number(btcData.price ?? 0);
+  const liveUsd = Number(btcData.usdValue ?? 0);
+  const change24h = Number.isFinite(Number(btcData.change24h))
+    ? Number(btcData.change24h)
+    : undefined;
+
+  const totalAssets = totalFiat + totalCryptoUsd;
 
   const byMonth = useMemo(() => aggregateByMonth(txns), [txns]);
   const ytd = useMemo(() => aggregateYtd(txns), [txns]);
@@ -813,7 +876,7 @@ export default function DashboardPage() {
             <div className="flex gap-4 text-xs text-white/60 mt-3">
               <span>Fiat: ${totalFiat.toLocaleString()}</span>
               <span>•</span>
-              <span>Crypto: ${liveUsd.toLocaleString()}</span>
+              <span>Crypto: ${totalCryptoUsd.toLocaleString()}</span>
             </div>
             <div className="mt-8 flex flex-wrap gap-3">
               <button
@@ -1025,7 +1088,7 @@ export default function DashboardPage() {
           <InfoRow
             icon={<Bitcoin size={18} />}
             label="Crypto"
-            value={`$${liveUsd.toLocaleString()}`}
+            value={`$${totalCryptoUsd.toLocaleString()}`}
           />
 
           <div className="h-px bg-white/20 my-3" />
@@ -1175,13 +1238,9 @@ export default function DashboardPage() {
 
                 {/* Upload button / spinner */}
                 <button
-                  onClick={
-                    avatarUploading ? undefined : handlePickAvatar
-                  }
+                  onClick={avatarUploading ? undefined : handlePickAvatar}
                   className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
-                  title={
-                    avatarUploading ? "Uploading…" : "Change photo"
-                  }
+                  title={avatarUploading ? "Uploading…" : "Change photo"}
                 >
                   {avatarUploading ? (
                     <Loader2 className="animate-spin" size={18} />
@@ -1878,9 +1937,21 @@ function TabPills({
   onChange: (v: "sent" | "received" | "all") => void;
 }) {
   const tabs = [
-    { key: "all" as const, label: "All", icon: <CreditCard className="h-5 w-5" /> },
-    { key: "sent" as const, label: "Sent", icon: <ArrowUpRight className="h-5 w-5" /> },
-    { key: "received" as const, label: "Received", icon: <ArrowDownLeft className="h-5 w-5" /> },
+    {
+      key: "all" as const,
+      label: "All",
+      icon: <CreditCard className="h-5 w-5" />,
+    },
+    {
+      key: "sent" as const,
+      label: "Sent",
+      icon: <ArrowUpRight className="h-5 w-5" />,
+    },
+    {
+      key: "received" as const,
+      label: "Received",
+      icon: <ArrowDownLeft className="h-5 w-5" />,
+    },
   ];
   return (
     <div className="flex items-center gap-3">

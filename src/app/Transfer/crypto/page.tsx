@@ -33,10 +33,9 @@ import {
   $ → Crypto • Deposit / Buy (BTC-only) / Swap / Send (pending review + OTP)
 
   ✅ Checking/Savings pulled from myAccounts(); if missing, fall back to /users/me.balances
-  ✅ Price seeding from server:
-     - balances.btcPrice (cents → dollars)
-     - balances.cryptoUSD (cents → dollars) → derive BTC units = cryptoUSD / btcPrice
-  ✅ Optimistic updates (local pending deltas)
+  ✅ Price / BTC holdings seeding from server:
+     - balances.btcPrice  (stored as cents or dollars → normalized via dollarsFromMinor)
+     - balances.cryptoUSD (same scaling) → derive BTC units = cryptoUSD / btcPrice
 ----------------------------------------------------------------------------- */
 
 type Quote = {
@@ -82,10 +81,25 @@ type PendingDelta = {
 
 /* ------------------------------- Helpers ------------------------------- */
 
-// cents → dollars (quick convert for server snapshots on /users/me.balances)
+/**
+ * Normalize a numeric balance/price snapshot from the backend.
+ *
+ * - If it's a big integer (e.g. 1010000) we treat it as "cents" → divide by 100.
+ * - If it's already a "normal looking" value (e.g. 10_500.25), we leave it alone.
+ *
+ * This keeps BTC price / cryptoUSD in sync with your ledger even if you change
+ * storage from dollars → cents later.
+ */
 function dollarsFromMinor(n: any): number {
   const v = Number(n);
-  return Number.isFinite(v) ? v : 0;
+  if (!Number.isFinite(v) || v === 0) return 0;
+
+  // Heuristic: values above 1_000 and with no decimals are probably minor units
+  if (Number.isInteger(v) && Math.abs(v) >= 1_000) {
+    return v / 100;
+  }
+
+  return v;
 }
 
 export default function CryptoFlowsPage() {
@@ -243,35 +257,44 @@ export default function CryptoFlowsPage() {
           setBtcAddress(lsAddr);
         }
 
-        // 🔹 Server balances snapshot (these look like cents → dollars)
+        // 🔹 Server balances snapshot
         const b = u?.balances || {};
 
+        // These might be stored as cents or plain dollars → normalize
         const serverCheckingUSD = dollarsFromMinor(b?.checking);
         const serverSavingsUSD = dollarsFromMinor(b?.savings);
+
         if (serverCheckingUSD > 0 || serverSavingsUSD > 0) {
           // Use these only if accounts API didn't already set values
           setCheckingBalance((prev) => (prev > 0 ? prev : serverCheckingUSD));
           setSavingsBalance((prev) => (prev > 0 ? prev : serverSavingsUSD));
         }
 
-        const serverBtcPriceUSD = dollarsFromMinor(b?.btcPrice); // e.g. 1010000 → 10100.00
-        const serverCryptoUSD = dollarsFromMinor(b?.cryptoUSD); // e.g. 100000  → 1000.00
+        // BTC price + crypto notional from ledger (normalized)
+        const serverBtcPriceUSD = dollarsFromMinor(b?.btcPrice);
+        const serverCryptoUSD = dollarsFromMinor(b?.cryptoUSD);
 
-        // If backend provides a price, seed BTC price now (Coingecko will refresh later)
+        // If backend provides a price, seed BTC price now (CoinGecko will refresh later)
         if (serverBtcPriceUSD > 0) {
-          setPrices((prev) => ({ ...prev, bitcoin: { usd: serverBtcPriceUSD } }));
+          setPrices((prev) => ({
+            ...prev,
+            [BTC.id]: { usd: serverBtcPriceUSD },
+          }));
         }
 
         // Derive BTC units = total crypto USD / btcPrice (snapshot)
         if (serverCryptoUSD > 0 && serverBtcPriceUSD > 0) {
           const units = +(serverCryptoUSD / serverBtcPriceUSD).toFixed(8);
-          setHoldings((prev) => {
-            const next = { ...prev, BTC: units };
-            try {
-              localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
-            } catch {}
-            return next;
-          });
+          if (units > 0) {
+            setHoldings((prev) => {
+              // only override BTC if we don't already have a local value
+              const next = { ...prev, BTC: prev.BTC ?? units };
+              try {
+                localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
+              } catch {}
+              return next;
+            });
+          }
         }
       } catch {
         const lsAddr = localStorage.getItem("hb_btc_wallet") || "";
@@ -342,7 +365,8 @@ export default function CryptoFlowsPage() {
     const kc = keyed?.checking;
     const ks = keyed?.savings;
 
-    // Read a "major-ish" USD value from any of the usual fields
+    // Read a "major-ish" USD value from any of the usual fields.
+    // If the connector sends cents, we normalize via dollarsFromMinor.
     const readMajor = (a: any): number | undefined => {
       if (!a) return undefined;
 
@@ -355,7 +379,7 @@ export default function CryptoFlowsPage() {
         a.current ??
         a.ledger;
 
-      const n = Number(raw);
+      const n = dollarsFromMinor(raw);
       return Number.isFinite(n) ? n : undefined;
     };
 
@@ -486,7 +510,7 @@ export default function CryptoFlowsPage() {
       const ref = (res as any)?.referenceId || (res as any)?.id;
       if (!ref) throw new Error("Missing referenceId");
 
-      // Optimistic: add BTC
+      // Optimistic: add BTC (card appears as soon as user buys)
       recordPendingDelta(ref, { BTC: +(+units.toFixed(8)) }, "Buy BTC");
 
       openOtp(ref);
@@ -562,7 +586,9 @@ export default function CryptoFlowsPage() {
       const ref = (res as any)?.referenceId || (res as any)?.id;
       if (!ref) throw new Error("Missing referenceId");
 
-      // Optimistic deltas
+      // Optimistic deltas:
+      //  - If you swap *to* a coin, its card appears immediately.
+      //  - If you swap *out* of a coin down to 0, its card disappears.
       const deltas: Record<string, number> =
         mode === "BUY_ALT_WITH_BTC"
           ? { BTC: -fromUnitsNumParsed, [toSym]: +estOut }
@@ -1246,6 +1272,8 @@ function BalanceCards({
   formatFiat: (n: number) => string;
   fmtUnits: (n: number, d?: number) => string;
 }) {
+  // Only show cards for coins that actually exist in holdings.
+  // New card appears when user swaps/buys into that symbol.
   const symbols = Object.keys(holdings).sort((a, b) =>
     a === "BTC" ? -1 : b === "BTC" ? 1 : a.localeCompare(b)
   );
