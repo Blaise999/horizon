@@ -640,7 +640,7 @@ export default function CryptoFlowsPage() {
       closeOtp();
 
       // Keep the optimistic state; backend approval will reconcile later.
-      router.push(`/transfer/pending?ref=${encodeURIComponent(ref)}`);
+      router.push(`/Transfer/pending?ref=${encodeURIComponent(ref)}`);
     } catch (e: any) {
       setOtpError(e?.message || "Invalid code. Try again.");
     } finally {
