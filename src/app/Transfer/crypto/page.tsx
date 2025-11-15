@@ -25,8 +25,8 @@ import {
   createCryptoSwap,
   createCryptoSend,
   meUser,
-  myAccounts,           // ✅ authoritative Checking/Savings (accounts API)
-  verifyTransferOtp,    // ✅ confirm OTP
+  myAccounts, // ✅ authoritative Checking/Savings (accounts API)
+  verifyTransferOtp, // ✅ confirm OTP
 } from "@/libs/api";
 
 /* -----------------------------------------------------------------------------
@@ -40,29 +40,29 @@ import {
 ----------------------------------------------------------------------------- */
 
 type Quote = {
-  id: string;      // CoinGecko id
-  symbol: string;  // "BTC"
-  name: string;    // "Bitcoin"
-  logo: string;    // "/coins/btc.svg"
+  id: string; // CoinGecko id
+  symbol: string; // "BTC"
+  name: string; // "Bitcoin"
+  logo: string; // "/coins/btc.svg"
   decimals?: number;
 };
 
 const COINS: Quote[] = [
-  { id: "bitcoin",        symbol: "BTC",  name: "Bitcoin",        logo: "/coins/btc.svg",  decimals: 8 },
-  { id: "ethereum",       symbol: "ETH",  name: "Ethereum",       logo: "/coins/eth.svg",  decimals: 6 },
-  { id: "tether",         symbol: "USDT", name: "Tether",         logo: "/coins/usdt.svg", decimals: 6 },
-  { id: "usd-coin",       symbol: "USDC", name: "USD Coin",       logo: "/coins/usdc.svg", decimals: 6 },
-  { id: "solana",         symbol: "SOL",  name: "Solana",         logo: "/coins/sol.svg",  decimals: 6 },
-  { id: "binancecoin",    symbol: "BNB",  name: "BNB",            logo: "/coins/bnb.svg",  decimals: 6 },
-  { id: "ripple",         symbol: "XRP",  name: "XRP",            logo: "/coins/xrp.svg",  decimals: 6 },
-  { id: "cardano",        symbol: "ADA",  name: "Cardano",        logo: "/coins/ada.svg",  decimals: 6 },
-  { id: "dogecoin",       symbol: "DOGE", name: "Dogecoin",       logo: "/coins/doge.svg", decimals: 6 },
-  { id: "tron",           symbol: "TRX",  name: "TRON",           logo: "/coins/trx.svg",  decimals: 6 },
-  { id: "polkadot",       symbol: "DOT",  name: "Polkadot",       logo: "/coins/dot.svg",  decimals: 6 },
-  { id: "litecoin",       symbol: "LTC",  name: "Litecoin",       logo: "/coins/ltc.svg",  decimals: 6 },
-  { id: "avalanche-2",    symbol: "AVAX", name: "Avalanche",      logo: "/coins/avax.svg", decimals: 6 },
-  { id: "chainlink",      symbol: "LINK", name: "Chainlink",      logo: "/coins/link.svg", decimals: 6 },
-  { id: "stellar",        symbol: "XLM",  name: "Stellar",        logo: "/coins/xlm.svg",  decimals: 6 },
+  { id: "bitcoin", symbol: "BTC", name: "Bitcoin", logo: "/coins/btc.svg", decimals: 8 },
+  { id: "ethereum", symbol: "ETH", name: "Ethereum", logo: "/coins/eth.svg", decimals: 6 },
+  { id: "tether", symbol: "USDT", name: "Tether", logo: "/coins/usdt.svg", decimals: 6 },
+  { id: "usd-coin", symbol: "USDC", name: "USD Coin", logo: "/coins/usdc.svg", decimals: 6 },
+  { id: "solana", symbol: "SOL", name: "Solana", logo: "/coins/sol.svg", decimals: 6 },
+  { id: "binancecoin", symbol: "BNB", name: "BNB", logo: "/coins/bnb.svg", decimals: 6 },
+  { id: "ripple", symbol: "XRP", name: "XRP", logo: "/coins/xrp.svg", decimals: 6 },
+  { id: "cardano", symbol: "ADA", name: "Cardano", logo: "/coins/ada.svg", decimals: 6 },
+  { id: "dogecoin", symbol: "DOGE", name: "Dogecoin", logo: "/coins/doge.svg", decimals: 6 },
+  { id: "tron", symbol: "TRX", name: "TRON", logo: "/coins/trx.svg", decimals: 6 },
+  { id: "polkadot", symbol: "DOT", name: "Polkadot", logo: "/coins/dot.svg", decimals: 6 },
+  { id: "litecoin", symbol: "LTC", name: "Litecoin", logo: "/coins/ltc.svg", decimals: 6 },
+  { id: "avalanche-2", symbol: "AVAX", name: "Avalanche", logo: "/coins/avax.svg", decimals: 6 },
+  { id: "chainlink", symbol: "LINK", name: "Chainlink", logo: "/coins/link.svg", decimals: 6 },
+  { id: "stellar", symbol: "XLM", name: "Stellar", logo: "/coins/xlm.svg", decimals: 6 },
 ];
 
 const COIN_BY_SYMBOL = COINS.reduce<Record<string, Quote>>((m, c) => {
@@ -82,29 +82,17 @@ type PendingDelta = {
 
 /* ------------------------------- Helpers ------------------------------- */
 
-// cents → dollars (quick convert for server snapshots)
+// cents → dollars (quick convert for server snapshots on /users/me.balances)
 function dollarsFromMinor(n: any): number {
   const v = Number(n);
   return Number.isFinite(v) ? Math.round(v) / 100 : 0;
-}
-
-function isFiniteNum(n: any) {
-  return typeof n === "number" && isFinite(n);
-}
-function centsFromMaybeMajor(v: any): number | undefined {
-  if (typeof v === "number" && isFinite(v)) return Math.round(v * 100);
-  return undefined;
-}
-function centsToDollars(n: number): number {
-  if (!isFinite(n)) return 0;
-  return Math.round(n) / 100;
 }
 
 export default function CryptoFlowsPage() {
   const router = useRouter();
   const [userName, setUserName] = useState("User");
 
-  // Account balances – authoritative from API (minor units → dollars)
+  // Account balances – authoritative from API (MAJOR units)
   const [checkingBalance, setCheckingBalance] = useState<number>(0);
   const [savingsBalance, setSavingsBalance] = useState<number>(0);
   const [payFrom, setPayFrom] = useState<AccountType>("Checking");
@@ -255,7 +243,7 @@ export default function CryptoFlowsPage() {
           setBtcAddress(lsAddr);
         }
 
-        // 🔹 Server balances snapshot (all appear to be cents → dollars)
+        // 🔹 Server balances snapshot (these look like cents → dollars)
         const b = u?.balances || {};
 
         const serverCheckingUSD = dollarsFromMinor(b?.checking);
@@ -266,8 +254,8 @@ export default function CryptoFlowsPage() {
           setSavingsBalance((prev) => (prev > 0 ? prev : serverSavingsUSD));
         }
 
-        const serverBtcPriceUSD = dollarsFromMinor(b?.btcPrice);   // e.g. 1010000 → 10100.00
-        const serverCryptoUSD   = dollarsFromMinor(b?.cryptoUSD);  // e.g. 100000  → 1000.00
+        const serverBtcPriceUSD = dollarsFromMinor(b?.btcPrice); // e.g. 1010000 → 10100.00
+        const serverCryptoUSD = dollarsFromMinor(b?.cryptoUSD); // e.g. 100000  → 1000.00
 
         // If backend provides a price, seed BTC price now (Coingecko will refresh later)
         if (serverBtcPriceUSD > 0) {
@@ -279,7 +267,9 @@ export default function CryptoFlowsPage() {
           const units = +(serverCryptoUSD / serverBtcPriceUSD).toFixed(8);
           setHoldings((prev) => {
             const next = { ...prev, BTC: units };
-            try { localStorage.setItem("hb_crypto_holdings", JSON.stringify(next)); } catch {}
+            try {
+              localStorage.setItem("hb_crypto_holdings", JSON.stringify(next));
+            } catch {}
             return next;
           });
         }
@@ -329,15 +319,15 @@ export default function CryptoFlowsPage() {
 
   /* ------------------------------- UI helpers ------------------------------- */
 
-  // Extract Checking/Savings with minor→major and shape fallbacks
+  // Extract Checking/Savings with shape fallbacks, treating values as MAJOR units
   function extractFiatBalances(acct: any): { checking: number; savings: number } {
     // possible shapes:
-    // 1) { accounts: [{type:'checking'|'savings', balance_minor}, ...] }
-    // 2) [{ accountType:'checking', available_minor }, ...]
-    // 3) { checking: {balance_minor}, savings: {balance_minor} }
+    // 1) { accounts: [{type:'checking'|'savings', balance}, ...] }
+    // 2) [{ accountType:'checking', available }, ...]
+    // 3) { checking: {balance}, savings: {balance} }
     const list: any[] =
       (acct?.accounts && Array.isArray(acct.accounts) && acct.accounts) ||
-      (Array.isArray(acct) ? acct : null) ||
+      (Array.isArray(acct) ? acct : []) ||
       [];
 
     const keyed = !Array.isArray(acct) && typeof acct === "object" ? acct : {};
@@ -348,29 +338,24 @@ export default function CryptoFlowsPage() {
     const c = fromList("checking");
     const s = fromList("savings");
 
-    const cMinor =
-      c?.balance_minor ?? c?.available_minor ?? c?.minor ??
-      centsFromMaybeMajor(c?.balance) ?? centsFromMaybeMajor(c?.available);
-
-    const sMinor =
-      s?.balance_minor ?? s?.available_minor ?? s?.minor ??
-      centsFromMaybeMajor(s?.balance) ?? centsFromMaybeMajor(s?.available);
-
     const kc = keyed?.checking;
     const ks = keyed?.savings;
 
-    const kcMinor =
-      kc?.balance_minor ?? kc?.available_minor ??
-      centsFromMaybeMajor(kc?.balance) ?? centsFromMaybeMajor(kc?.available);
+    const readMajor = (a: any): number | undefined => {
+      if (!a) return undefined;
+      const raw =
+        a.balance ??
+        a.available ??
+        a.current ??
+        a.ledger;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : undefined;
+    };
 
-    const ksMinor =
-      ks?.balance_minor ?? ks?.available_minor ??
-      centsFromMaybeMajor(ks?.balance) ?? centsFromMaybeMajor(ks?.available);
+    const checking = readMajor(c) ?? readMajor(kc) ?? 0;
+    const savings = readMajor(s) ?? readMajor(ks) ?? 0;
 
-    const checkingMinor = isFiniteNum(cMinor) ? cMinor : isFiniteNum(kcMinor) ? kcMinor : 0;
-    const savingsMinor  = isFiniteNum(sMinor) ? sMinor : isFiniteNum(ksMinor) ? ksMinor : 0;
-
-    return { checking: centsToDollars(checkingMinor), savings: centsToDollars(savingsMinor) };
+    return { checking, savings };
   }
 
   // Extract BTC address from /users/me
@@ -546,7 +531,7 @@ export default function CryptoFlowsPage() {
 
       const res = await createCryptoSwap({
         route: "BTC_BASE",
-        mode,                         // "BUY_ALT_WITH_BTC" | "SELL_ALT_FOR_BTC"
+        mode, // "BUY_ALT_WITH_BTC" | "SELL_ALT_FOR_BTC"
         fromSymbol: fromSym,
         toSymbol: toSym,
         fromUnits: +fromUnitsNumParsed.toFixed(8),
@@ -663,7 +648,10 @@ export default function CryptoFlowsPage() {
         <div className="max-w-5xl mx-auto">
           {/* Back */}
           <div className="flex items-center gap-3 mb-6">
-            <a href="/dashboard/dashboard" className="inline-flex items-center gap-2 text-white/70 hover:text-white transition">
+            <a
+              href="/dashboard/dashboard"
+              className="inline-flex items-center gap-2 text-white/70 hover:text-white transition"
+            >
               <ArrowLeft className="h-5 w-5" /> Back to dashboard
             </a>
           </div>
@@ -678,7 +666,8 @@ export default function CryptoFlowsPage() {
                 <div>
                   <h1 className="text-xl md:text-2xl font-semibold">$ → Crypto</h1>
                   <p className="text-white/70 text-sm mt-1">
-                    Deposit BTC from external wallets, buy BTC with USD, swap using BTC as your base asset, or initiate an on-chain send.
+                    Deposit BTC from external wallets, buy BTC with USD, swap using BTC as your base
+                    asset, or initiate an on-chain send.
                   </p>
                 </div>
               </div>
@@ -707,13 +696,7 @@ export default function CryptoFlowsPage() {
             </div>
 
             {/* ====== Balance Cards (crypto holdings) ====== */}
-            <BalanceCards
-              holdings={holdings}
-              prices={prices}
-              pending={pending}
-              formatFiat={formatFiat}
-              fmtUnits={fmtUnits}
-            />
+            <BalanceCards holdings={holdings} prices={prices} pending={pending} formatFiat={formatFiat} fmtUnits={fmtUnits} />
 
             {/* Controls */}
             <div className="mt-8 grid md:grid-cols-[420px,1fr] gap-6">
@@ -741,8 +724,8 @@ export default function CryptoFlowsPage() {
                 <div className="rounded-xl border border-white/15 bg-white/[0.03] p-3 text-xs text-white/70 flex gap-2">
                   <Info className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
-                    <b>BTC is your base asset.</b> You can swap between BTC and other supported coins. ALT ↔ ALT flows route via BTC, so
-                    select BTC on one side of the pair.
+                    <b>BTC is your base asset.</b> You can swap between BTC and other supported coins.
+                    ALT ↔ ALT flows route via BTC, so select BTC on one side of the pair.
                   </div>
                 </div>
 
@@ -751,7 +734,8 @@ export default function CryptoFlowsPage() {
                 <div className="text-xs text-white/60">
                   {lastUpdated ? (
                     <>
-                      Last updated: <span className="text-white/80">{lastUpdated.toLocaleTimeString()}</span>
+                      Last updated:{" "}
+                      <span className="text-white/80">{lastUpdated.toLocaleTimeString()}</span>
                     </>
                   ) : (
                     "Fetching live quotes…"
@@ -801,14 +785,18 @@ export default function CryptoFlowsPage() {
                       <div className="mt-3 flex items-center gap-2">
                         <CopyButton value={btcAddress} disabled={!btcAddress || btcAddrLoading} />
                         {!btcAddress && !btcAddrLoading && (
-                          <a href="/onboarding" className="text-xs underline text-white/80 hover:text-white">
+                          <a
+                            href="/onboarding"
+                            className="text-xs underline text-white/80 hover:text-white"
+                          >
                             Add a BTC address in Onboarding (Wallets)
                           </a>
                         )}
                       </div>
                       <div className="text-xs text-white/60 mt-3">
-                        Use this address to transfer BTC from your other wallets or exchanges into Horizon.  
-                        Deposits are credited to your BTC balance after blockchain confirmation and internal review.
+                        Use this address to transfer BTC from your other wallets or exchanges into
+                        Horizon. Deposits are credited to your BTC balance after blockchain
+                        confirmation and internal review.
                       </div>
                       <div className="text-[11px] text-white/40 mt-2">
                         Source: <span className="font-medium">/users/me</span> (wallets){" "}
@@ -831,7 +819,9 @@ export default function CryptoFlowsPage() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm text-white/60">Price</div>
-                        <div className="text-base font-medium">{btcPrice ? formatFiat(btcPrice) : "—"}</div>
+                        <div className="text-base font-medium">
+                          {btcPrice ? formatFiat(btcPrice) : "—"}
+                        </div>
                       </div>
                     </div>
 
@@ -847,7 +837,12 @@ export default function CryptoFlowsPage() {
                           onBlur={() => {
                             const n = Number(String(usd).replace(/[,$\s]/g, ""));
                             if (isFinite(n))
-                              setUsd(n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                              setUsd(
+                                n.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })
+                              );
                           }}
                           placeholder="0.00"
                           className="w-full rounded-2xl bg-white/10 border border-white/20 pl-11 pr-4 py-3 text-lg shadow-inner"
@@ -860,7 +855,12 @@ export default function CryptoFlowsPage() {
                             key={v}
                             className="px-3 py-2 rounded-xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm"
                             onClick={() =>
-                              setUsd(v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                              setUsd(
+                                v.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })
+                              )
                             }
                           >
                             {formatFiat(v)}
@@ -877,7 +877,9 @@ export default function CryptoFlowsPage() {
                         onChange={(e) => setPayFrom(e.target.value as AccountType)}
                         className="mt-2 w-full rounded-2xl bg-white/10 border border-white/20 px-3 py-3 text-base"
                       >
-                        <option value="Checking">Checking — {formatFiat(checkingBalance)}</option>
+                        <option value="Checking">
+                          Checking — {formatFiat(checkingBalance)}
+                        </option>
                         <option value="Savings">Savings — {formatFiat(savingsBalance)}</option>
                       </select>
                     </div>
@@ -887,11 +889,14 @@ export default function CryptoFlowsPage() {
                       <div className="text-sm text-white/70">You get</div>
                       <div className="mt-1 flex items-center justify-between gap-3">
                         <div className="text-3xl font-bold">
-                          {fmtUnits(buyUnits, BTC.decimals ?? 8)} <span className="text-white/60 text-lg">{BTC.symbol}</span>
+                          {fmtUnits(buyUnits, BTC.decimals ?? 8)}{" "}
+                          <span className="text-white/60 text-lg">{BTC.symbol}</span>
                         </div>
                         <CopyAmountButton value={buyUnits.toString()} />
                       </div>
-                      <div className="mt-1 text-xs text-white/60">Based on {formatFiat(usdValue)} at current price.</div>
+                      <div className="mt-1 text-xs text-white/60">
+                        Based on {formatFiat(usdValue)} at current price.
+                      </div>
                     </div>
 
                     {/* Holdings quick view */}
@@ -901,21 +906,26 @@ export default function CryptoFlowsPage() {
                         {fmtUnits(holdings.BTC ?? 0, BTC.decimals ?? 8)}
                         <span className="text-white/60 text-base ml-1">{BTC.symbol}</span>
                       </div>
-                      <div className="text-sm text-white/60 mt-1">≈ {formatFiat(((holdings.BTC ?? 0) * (btcPrice || 0)) || 0)}</div>
+                      <div className="text-sm text-white/60 mt-1">
+                        ≈ {formatFiat(((holdings.BTC ?? 0) * (btcPrice || 0)) || 0)}
+                      </div>
                     </div>
 
                     <button
                       onClick={handleBuyBtc}
                       disabled={!(btcPrice > 0 && usdValue > 0 && buyUnits > 0)}
                       className={`mt-3 w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
-                        btcPrice > 0 && usdValue > 0 && buyUnits > 0 ? "" : "opacity-60 cursor-not-allowed"
+                        btcPrice > 0 && usdValue > 0 && buyUnits > 0
+                          ? ""
+                          : "opacity-60 cursor-not-allowed"
                       }`}
                       style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
                     >
                       Submit Buy (OTP + admin approval)
                     </button>
                     <div className="mt-2 text-xs text-white/60">
-                      Confirm with OTP. After approval, the equivalent BTC is credited to your crypto balance.
+                      Confirm with OTP. After approval, the equivalent BTC is credited to your
+                      crypto balance.
                     </div>
                   </>
                 )}
@@ -929,7 +939,9 @@ export default function CryptoFlowsPage() {
                         <label className="text-sm text-white/70">From</label>
                         <CoinSelect value={swapFromId} onChange={setSwapFromId} />
                         <div className="mt-1 text-xs text-white/60">
-                          Balance: {fmtUnits(holdings[fromCoin.symbol] ?? 0, fromCoin.decimals ?? 6)} {fromCoin.symbol}
+                          Balance:{" "}
+                          {fmtUnits(holdings[fromCoin.symbol] ?? 0, fromCoin.decimals ?? 6)}{" "}
+                          {fromCoin.symbol}
                         </div>
                       </div>
 
@@ -943,7 +955,9 @@ export default function CryptoFlowsPage() {
                           }}
                           title="Flip"
                         >
-                          <ArrowRightLeft className={`h-5 w-5 ${reversed ? "rotate-180" : ""}`} />
+                          <ArrowRightLeft
+                            className={`h-5 w-5 ${reversed ? "rotate-180" : ""}`}
+                          />
                         </button>
                       </div>
 
@@ -951,14 +965,18 @@ export default function CryptoFlowsPage() {
                         <label className="text-sm text-white/70">To</label>
                         <CoinSelect value={swapToId} onChange={setSwapToId} />
                         <div className="mt-1 text-xs text-white/60">
-                          Balance: {fmtUnits(holdings[toCoin.symbol] ?? 0, toCoin.decimals ?? 6)} {toCoin.symbol}
+                          Balance:{" "}
+                          {fmtUnits(holdings[toCoin.symbol] ?? 0, toCoin.decimals ?? 6)}{" "}
+                          {toCoin.symbol}
                         </div>
                       </div>
                     </div>
 
                     {/* Amount input */}
                     <div className="mt-4">
-                      <label className="text-sm text-white/70">Amount ({fromCoin.symbol})</label>
+                      <label className="text-sm text-white/70">
+                        Amount ({fromCoin.symbol})
+                      </label>
                       <div className="mt-2 flex items-center gap-2">
                         <input
                           inputMode="decimal"
@@ -969,7 +987,9 @@ export default function CryptoFlowsPage() {
                         />
                         <button
                           className="px-3 py-2 rounded-xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm"
-                          onClick={() => setSwapFromUnits(String(+(holdings[fromCoin.symbol] ?? 0)))}
+                          onClick={() =>
+                            setSwapFromUnits(String(+(holdings[fromCoin.symbol] ?? 0)))
+                          }
                         >
                           Max
                         </button>
@@ -980,7 +1000,8 @@ export default function CryptoFlowsPage() {
                     {!swapInvolvesBTC && (
                       <div className="mt-3 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-xs text-amber-200 inline-flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4" />
-                        Swaps must include BTC (BTC is your base asset). Select BTC on either the “From” or “To” side.
+                        Swaps must include BTC (BTC is your base asset). Select BTC on either the
+                        “From” or “To” side.
                       </div>
                     )}
 
@@ -991,9 +1012,17 @@ export default function CryptoFlowsPage() {
                           <div className="text-white/60">Rate</div>
                           <div className="mt-1">
                             1 {fromCoin.symbol} ≈{" "}
-                            {toPrice > 0 && fromPrice > 0 ? fmtUnits(fromPrice / toPrice, toCoin.decimals ?? 6) : "—"} {toCoin.symbol}
+                            {toPrice > 0 && fromPrice > 0
+                              ? fmtUnits(
+                                  fromPrice / toPrice,
+                                  toCoin.decimals ?? 6
+                                )
+                              : "—"}{" "}
+                            {toCoin.symbol}
                           </div>
-                          <div className="text-white/50 mt-0.5">via USD ({formatFiat(fromPrice)} / {formatFiat(toPrice)})</div>
+                          <div className="text-white/50 mt-0.5">
+                            via USD ({formatFiat(fromPrice)} / {formatFiat(toPrice)})
+                          </div>
                         </div>
                         <div>
                           <div className="text-white/60">Estimated receive</div>
@@ -1009,7 +1038,9 @@ export default function CryptoFlowsPage() {
                                 key={p}
                                 onClick={() => setSlippagePct(p)}
                                 className={`px-3 py-1.5 rounded-xl border text-xs ${
-                                  slippagePct === p ? "bg-[#00E0FF]/15 border-[#00E0FF]/40" : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
+                                  slippagePct === p
+                                    ? "bg-[#00E0FF]/15 border-[#00E0FF]/40"
+                                    : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
                                 }`}
                               >
                                 {p}%
@@ -1017,7 +1048,8 @@ export default function CryptoFlowsPage() {
                             ))}
                           </div>
                           <div className="text-white/50 mt-1">
-                            Min received: {fmtUnits(minReceived, toCoin.decimals ?? 6)} {toCoin.symbol}
+                            Min received:{" "}
+                            {fmtUnits(minReceived, toCoin.decimals ?? 6)} {toCoin.symbol}
                           </div>
                         </div>
                       </div>
@@ -1031,7 +1063,7 @@ export default function CryptoFlowsPage() {
                         swapFromId === swapToId ||
                         (holdings[fromCoin.symbol] ?? 0) < fromUnitsNum - 1e-12
                       }
-                      className={`mt-4 w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] $(
+                      className={`mt-4 w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
                         swapInvolvesBTC &&
                         fromUnitsNum > 0 &&
                         fromPrice > 0 &&
@@ -1040,15 +1072,15 @@ export default function CryptoFlowsPage() {
                         (holdings[fromCoin.symbol] ?? 0) >= fromUnitsNum - 1e-12
                           ? ""
                           : "opacity-60 cursor-not-allowed"
-                      )`}
+                      }`}
                       style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
                     >
                       Submit Swap (OTP + admin approval)
                     </button>
 
                     <div className="mt-2 text-xs text-white/60">
-                      BTC remains the reference asset. We apply an optimistic update and mark the swap as pending; final balances are
-                      confirmed after backend approval.
+                      BTC remains the reference asset. We apply an optimistic update and mark the
+                      swap as pending; final balances are confirmed after backend approval.
                     </div>
                   </div>
                 )}
@@ -1062,13 +1094,17 @@ export default function CryptoFlowsPage() {
                         <label className="text-sm text-white/70">Asset</label>
                         <CoinSelect value={swapFromId} onChange={setSwapFromId} />
                         <div className="mt-1 text-xs text-white/60">
-                          Balance: {fmtUnits(holdings[fromCoin.symbol] ?? 0, fromCoin.decimals ?? 6)} {fromCoin.symbol}
+                          Balance:{" "}
+                          {fmtUnits(holdings[fromCoin.symbol] ?? 0, fromCoin.decimals ?? 6)}{" "}
+                          {fromCoin.symbol}
                         </div>
                       </div>
 
                       {/* amount in units */}
                       <div>
-                        <label className="text-sm text-white/70">Amount ({fromCoin.symbol})</label>
+                        <label className="text-sm text-white/70">
+                          Amount ({fromCoin.symbol})
+                        </label>
                         <div className="mt-2 flex items-center gap-2">
                           <input
                             inputMode="decimal"
@@ -1079,7 +1115,9 @@ export default function CryptoFlowsPage() {
                           />
                           <button
                             className="px-3 py-2 rounded-xl bg-white/10 border border-white/20 hover:bg-white/15 text-sm"
-                            onClick={() => setSwapFromUnits(String(+(holdings[fromCoin.symbol] ?? 0)))}
+                            onClick={() =>
+                              setSwapFromUnits(String(+(holdings[fromCoin.symbol] ?? 0)))
+                            }
                           >
                             Max
                           </button>
@@ -1116,12 +1154,14 @@ export default function CryptoFlowsPage() {
                         onClick={handleSend}
                         disabled={
                           !Number(swapFromUnits) ||
-                          (holdings[fromCoin.symbol] ?? 0) < Number(swapFromUnits) - 1e-12 ||
+                          (holdings[fromCoin.symbol] ?? 0) <
+                            Number(swapFromUnits) - 1e-12 ||
                           !sendAddress
                         }
                         className={`w-full px-4 py-3 rounded-2xl text-[#0B0F14] shadow-[0_12px_32px_rgba(0,180,216,.35)] ${
                           Number(swapFromUnits) &&
-                          (holdings[fromCoin.symbol] ?? 0) >= Number(swapFromUnits) - 1e-12 &&
+                          (holdings[fromCoin.symbol] ?? 0) >=
+                            Number(swapFromUnits) - 1e-12 &&
                           sendAddress
                             ? ""
                             : "opacity-60 cursor-not-allowed"
@@ -1132,8 +1172,9 @@ export default function CryptoFlowsPage() {
                       </button>
 
                       <div className="text-xs text-white/60">
-                        We apply an optimistic debit to your {fromCoin.symbol} holdings and mark the transaction as pending. Final
-                        settlement is completed after OTP verification and admin approval.
+                        We apply an optimistic debit to your {fromCoin.symbol} holdings and mark the
+                        transaction as pending. Final settlement is completed after OTP
+                        verification and admin approval.
                       </div>
                     </div>
                   </div>
@@ -1158,7 +1199,9 @@ export default function CryptoFlowsPage() {
           {toast && (
             <div
               className={`mt-6 rounded-2xl border p-4 text-sm flex items-start gap-3 ${
-                toast.kind === "ok" ? "border-emerald-400/30 bg-emerald-500/10" : "border-rose-400/30 bg-rose-500/10"
+                toast.kind === "ok"
+                  ? "border-emerald-400/30 bg-emerald-500/10"
+                  : "border-rose-400/30 bg-rose-500/10"
               }`}
             >
               {toast.kind === "ok" ? (
@@ -1189,7 +1232,9 @@ function BalanceCards({
   formatFiat: (n: number) => string;
   fmtUnits: (n: number, d?: number) => string;
 }) {
-  const symbols = Object.keys(holdings).sort((a, b) => (a === "BTC" ? -1 : b === "BTC" ? 1 : a.localeCompare(b)));
+  const symbols = Object.keys(holdings).sort((a, b) =>
+    a === "BTC" ? -1 : b === "BTC" ? 1 : a.localeCompare(b)
+  );
 
   if (symbols.length === 0) {
     return (
@@ -1205,11 +1250,13 @@ function BalanceCards({
         const coin = COIN_BY_SYMBOL[sym];
         const id = coin?.id;
         const units = holdings[sym] ?? 0;
-        const price = id ? (prices[id]?.usd ?? 0) : 0;
+        const price = id ? prices[id]?.usd ?? 0 : 0;
         const value = units * price;
 
         // pending badge if any open deltas for this coin
-        const pendingForCoin = Object.values(pending).some((p) => (p.deltas[sym] || 0) !== 0);
+        const pendingForCoin = Object.values(pending).some(
+          (p) => (p.deltas[sym] || 0) !== 0
+        );
 
         return (
           <div
@@ -1219,14 +1266,21 @@ function BalanceCards({
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-2xl bg-white/10 border border-white/20 grid place-items-center overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {coin?.logo ? <img src={coin.logo} alt={sym} className="h-6 w-6 object-contain" /> : <span>{sym}</span>}
+                {coin?.logo ? (
+                  <img src={coin.logo} alt={sym} className="h-6 w-6 object-contain" />
+                ) : (
+                  <span>{sym}</span>
+                )}
               </div>
               <div>
                 <div className="text-sm text-white/70">{coin?.name || sym}</div>
                 <div className="text-xl font-semibold">
-                  {fmtUnits(units, coin?.decimals ?? 6)} <span className="text-white/60 text-sm">{sym}</span>
+                  {fmtUnits(units, coin?.decimals ?? 6)}{" "}
+                  <span className="text-white/60 text-sm">{sym}</span>
                 </div>
-                <div className="text-xs text-white/60 mt-0.5">≈ {formatFiat(value || 0)}</div>
+                <div className="text-xs text-white/60 mt-0.5">
+                  ≈ {formatFiat(value || 0)}
+                </div>
               </div>
             </div>
             {pendingForCoin && (
@@ -1256,7 +1310,9 @@ function TabButton({
     <button
       onClick={onClick}
       className={`px-4 py-2 rounded-2xl text-sm border transition-all ${
-        active ? "bg-[#00E0FF]/15 border-[#00E0FF]/40" : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
+        active
+          ? "bg-[#00E0FF]/15 border-[#00E0FF]/40"
+          : "bg-white/10 border-white/20 hover:bg-white/[0.12]"
       }`}
     >
       {children}
@@ -1300,7 +1356,9 @@ function CopyButton({ value, disabled }: { value: string; disabled?: boolean }) 
       onClick={copy}
       disabled={disabled}
       className={`px-3 py-2 rounded-xl border text-sm inline-flex items-center gap-2 ${
-        disabled ? "bg-white/5 border-white/15 opacity-60 cursor-not-allowed" : "bg-white/10 border-white/20 hover:bg-white/15"
+        disabled
+          ? "bg-white/5 border-white/15 opacity-60 cursor-not-allowed"
+          : "bg-white/10 border-white/20 hover:bg-white/15"
       }`}
       title="Copy address"
     >
@@ -1318,7 +1376,13 @@ function CoinBadge({ coinId }: { coinId: string }) {
     <div className="h-10 w-10 rounded-2xl bg-white/10 border border-white/20 grid place-items-center overflow-hidden">
       {!err ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={c.logo} alt={c.symbol} className="h-6 w-6 object-contain" onError={() => setErr(true)} draggable={false} />
+        <img
+          src={c.logo}
+          alt={c.symbol}
+          className="h-6 w-6 object-contain"
+          onError={() => setErr(true)}
+          draggable={false}
+        />
       ) : (
         <span className="text-xs font-semibold">{c.symbol}</span>
       )}
@@ -1332,7 +1396,9 @@ function CoinSelect({ value, onChange }: { value: string; onChange: (id: string)
   const [q, setQ] = useState("");
   const selected = COINS.find((c) => c.id === value)!;
   const filtered = COINS.filter(
-    (c) => c.name.toLowerCase().includes(q.toLowerCase()) || c.symbol.toLowerCase().includes(q.toLowerCase())
+    (c) =>
+      c.name.toLowerCase().includes(q.toLowerCase()) ||
+      c.symbol.toLowerCase().includes(q.toLowerCase())
   );
 
   const [imgErr, setImgErr] = useState(false);
@@ -1398,7 +1464,10 @@ function CoinSelect({ value, onChange }: { value: string; onChange: (id: string)
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                       (e.currentTarget.parentElement as HTMLElement).textContent = c.symbol;
-                      (e.currentTarget.parentElement as HTMLElement).classList.add("text-[10px]", "font-semibold");
+                      (e.currentTarget.parentElement as HTMLElement).classList.add(
+                        "text-[10px]",
+                        "font-semibold"
+                      );
                     }}
                     draggable={false}
                   />
@@ -1409,7 +1478,9 @@ function CoinSelect({ value, onChange }: { value: string; onChange: (id: string)
                 </div>
               </button>
             ))}
-            {filtered.length === 0 && <div className="px-4 py-6 text-sm text-white/60">No coins match.</div>}
+            {filtered.length === 0 && (
+              <div className="px-4 py-6 text-sm text-white/60">No coins match.</div>
+            )}
           </div>
         </div>
       )}
@@ -1462,7 +1533,8 @@ function OtpDrawer({
           </div>
 
           <div className="mt-2 text-xs text-white/60">
-            We’ve sent a 6-digit code to your verified device or email. Enter it below to confirm this action.
+            We’ve sent a 6-digit code to your verified device or email. Enter it below to confirm
+            this action.
           </div>
 
           <div className="mt-4 grid gap-3">
@@ -1499,7 +1571,9 @@ function OtpDrawer({
                 onClick={onSubmit}
                 disabled={verifying || code.replace(/\D/g, "").length !== 6}
                 className={`px-4 py-3 rounded-2xl text-[#0B0F14] ${
-                  verifying || code.replace(/\D/g, "").length !== 6 ? "opacity-60 cursor-not-allowed" : ""
+                  verifying || code.replace(/\D/g, "").length !== 6
+                    ? "opacity-60 cursor-not-allowed"
+                    : ""
                 }`}
                 style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
               >
@@ -1515,8 +1589,8 @@ function OtpDrawer({
             </div>
 
             <div className="text-[11px] text-white/45">
-              Having trouble? Make sure you’re using the most recent OTP linked to this request. Resend and expiry handling is managed by
-              your backend OTP flow.
+              Having trouble? Make sure you’re using the most recent OTP linked to this request.
+              Resend and expiry handling is managed by your backend OTP flow.
             </div>
           </div>
         </div>
