@@ -125,7 +125,7 @@ export default function LoginPage() {
   async function verifyOtpNow() {
     setOtpError("");
     const code = otp.join("");
-    if (code.length !== 6) {
+       if (code.length !== 6) {
       setOtpError("Enter the 6-digit code.");
       return;
     }
@@ -298,22 +298,41 @@ export default function LoginPage() {
 
               <div>
                 <Label htmlFor="password">Password</Label>
-                <div className="mt-1 relative flex items-center">
-                  <Input
-                    id="password"
-                    type={showPw ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pr-10 bg-white/5 border-white/10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(!showPw)}
-                    className="absolute right-2 text-[#9BB0C6] hover:text-[#E6EEF7]"
-                  >
-                    {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                <div className="mt-1 relative flex flex-col gap-1">
+                  <div className="relative flex items-center">
+                    <Input
+                      id="password"
+                      type={showPw ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pr-10 bg-white/5 border-white/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(!showPw)}
+                      className="absolute right-2 text-[#9BB0C6] hover:text-[#E6EEF7]"
+                    >
+                      {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+
+                  {/* Forgot password link */}
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        router.push(
+                          `${PATHS.DASHBOARD_FORGOT_PASSWORD}${
+                            email ? `?email=${encodeURIComponent(email)}` : ""
+                          }`
+                        )
+                      }
+                      className="text-[11px] text-[#00E0FF] hover:underline"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -372,13 +391,17 @@ export default function LoginPage() {
                     maxLength={6}
                     placeholder="••••••"
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onChange={(e) =>
+                      setPin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
                     className="pl-10 text-center tracking-[.4em] bg-white/5 border-white/10"
                   />
                 </div>
               </div>
 
-              {quickError && <div className="text-rose-400 text-xs text-center">{quickError}</div>}
+              {quickError && (
+                <div className="text-rose-400 text-xs text-center">{quickError}</div>
+              )}
 
               <Button
                 onClick={handlePinLogin}
@@ -437,7 +460,9 @@ export default function LoginPage() {
                   key={i}
                   maxLength={1}
                   value={v}
-                  onChange={(e) => handleOtpChange(i, e.target.value, otp, setOtp)}
+                  onChange={(e) =>
+                    handleOtpChange(i, e.target.value, otp, setOtp)
+                  }
                   className="w-10 h-12 text-center text-lg bg-white/5 border-white/10"
                 />
               ))}
@@ -446,13 +471,23 @@ export default function LoginPage() {
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-[#9BB0C6] flex items-center gap-1">
                 <Timer className="h-3.5 w-3.5" />
-                {resendIn > 0 ? `You can resend in ${resendIn}s` : "You can resend a code now."}
+                {resendIn > 0
+                  ? `You can resend in ${resendIn}s`
+                  : "You can resend a code now."}
               </div>
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => sendOtpNow(email)} disabled={otpSending || resendIn > 0}>
+                <Button
+                  variant="ghost"
+                  onClick={() => sendOtpNow(email)}
+                  disabled={otpSending || resendIn > 0}
+                >
                   {otpSending ? "Sending…" : "Resend"}
                 </Button>
-                <Button onClick={verifyOtpNow} disabled={otpVerifying} className="gap-2">
+                <Button
+                  onClick={verifyOtpNow}
+                  disabled={otpVerifying}
+                  className="gap-2"
+                >
                   {otpVerifying ? "Verifying…" : "Verify"}
                   <CheckCircle2 className="h-4 w-4" />
                 </Button>
@@ -516,10 +551,14 @@ function credentialToJSON(cred: PublicKeyCredential, email: string) {
   const authenticatorData = bufferToBase64url(
     (cred.response as AuthenticatorAssertionResponse).authenticatorData
   );
-  const signature = bufferToBase64url((cred.response as AuthenticatorAssertionResponse).signature);
+  const signature = bufferToBase64url(
+    (cred.response as AuthenticatorAssertionResponse).signature
+  );
   const userHandle =
     (cred.response as AuthenticatorAssertionResponse).userHandle &&
-    bufferToBase64url((cred.response as AuthenticatorAssertionResponse).userHandle!);
+    bufferToBase64url(
+      (cred.response as AuthenticatorAssertionResponse).userHandle!
+    );
   const rawId = bufferToBase64url(cred.rawId);
   return {
     email,

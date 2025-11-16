@@ -479,6 +479,7 @@ function normalizeOutboundPayload(raw: any) {
       p.recipient.address.country ?? p.country ?? p.recipientCountry ?? "US";
   } else {
     // STRING MODE: caller did NOT provide an object → never send `recipient:{}`
+
     delete p.recipient;
 
     if (name) {
@@ -513,7 +514,9 @@ function normalizeOutboundPayload(raw: any) {
 /* ───────────────── Endpoint resolver (generic) ───────────────── */
 function resolveTransferEndpoint(p: any): string {
   const looksDeposit =
-    ["deposit", "add_money", "addmoney"].includes(String(p?.type || p?.intent || p?.rail || "").toLowerCase());
+    ["deposit", "add_money", "addmoney"].includes(
+      String(p?.type || p?.intent || p?.rail || "").toLowerCase()
+    );
   if (looksDeposit) return "/transfer/deposit";
 
   const rail = String(p?.rail || p?.method || p?.type || "").toLowerCase();
@@ -535,7 +538,7 @@ function resolveTransferEndpoint(p: any): string {
     if (action === "buy") return "/transfer/crypto/buy";
     if (action === "swap") return "/transfer/crypto/swap";
     if (action === "send") return "/transfer/crypto/send";
-    }
+  }
 
   const delivery = String(p?.delivery || "").toUpperCase();
   if (["WIRE", "ACH", "SAME_DAY_ACH"].includes(delivery)) return "/transfer/usa";
@@ -611,6 +614,39 @@ export const API = {
     request("/auth/login", { method: "POST", json: { email, password } }),
   pinLogin: (email: string, pin: string) =>
     request("/auth/pin/login", { method: "POST", json: { email, pin } }),
+
+  // 🔐 Forgot password flow
+  // Low-level/legacy helpers (OTP + token)
+  forgotPassword: (email: string) =>
+    request("/auth/forgot-password", {
+      method: "POST",
+      json: { email },
+    }),
+  verifyResetCode: (email: string, code: string) =>
+    request("/auth/verify-reset-code", {
+      method: "POST",
+      json: { email, code },
+    }),
+  resetPassword: (resetToken: string, newPassword: string) =>
+    request("/auth/reset-password", {
+      method: "POST",
+      json: { resetToken, newPassword },
+    }),
+  // High-level helpers for link-based UX (what the new page uses)
+  requestPasswordReset: (email: string) =>
+    request("/auth/forgot-password", {
+      method: "POST",
+      json: { email },
+    }),
+  confirmPasswordReset: (payload: {
+    email: string;
+    token: string;
+    password: string;
+  }) =>
+    request("/auth/reset-password", {
+      method: "POST",
+      json: { resetToken: payload.token, newPassword: payload.password },
+    }),
 
   pinSet: (pin: string) =>
     request("/auth/pin/set", { method: "POST", json: { pin } }),
@@ -781,8 +817,10 @@ export const API = {
 
     const nameStr =
       (typeof normalized.recipientName === "string" && normalized.recipientName.trim()) ||
-      (typeof normalized["Recipient Name"] === "string" && (normalized as any)["Recipient Name"].trim()) ||
-      (typeof normalized.recipient_name === "string" && normalized.recipient_name.trim()) ||
+      (typeof normalized["Recipient Name"] === "string" &&
+        (normalized as any)["Recipient Name"].trim()) ||
+      (typeof normalized.recipient_name === "string" &&
+        normalized.recipient_name.trim()) ||
       (normalized.recipient &&
         typeof normalized.recipient === "object" &&
         typeof normalized.recipient.name === "string" &&
@@ -804,16 +842,23 @@ export const API = {
   getTransferSummary: (referenceId: string) =>
     request(`/transfer/summary/${encodeURIComponent(referenceId)}`),
   receiptPdf: (id: string) =>
-    requestRaw(`/transfer/${encodeURIComponent(id)}/receipt.pdf`, { method: "GET" }),
+    requestRaw(`/transfer/${encodeURIComponent(id)}/receipt.pdf`, {
+      method: "GET",
+    }),
 
   /* Admin */
   listUsersAdmin: () => request("/admin/users"),
   getUserAdmin: (id: string) =>
     request(`/admin/users/${encodeURIComponent(id)}`),
   patchUserAdmin: (id: string, json: any) =>
-    request(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", json }),
+    request(`/admin/users/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      json,
+    }),
   deleteUserAdmin: (id: string) =>
-    request(`/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    request(`/admin/users/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 
   adminOverview: () => request("/admin/overview"),
   adminReports: () => request("/admin/reports"),
@@ -858,7 +903,9 @@ export const API = {
       method: "PATCH",
     }),
   markAllNotificationsRead: () =>
-    request("/users/me/notifications/mark-all-read", { method: "POST" }),
+    request("/users/me/notifications/mark-all-read", {
+      method: "POST",
+    }),
 
   /**
    * Backward-compat wrapper that *tries* /users/me/notifications first,
@@ -894,14 +941,25 @@ export function goToPending(router: { push: (p: string) => void }, ref: string) 
 
 export function afterCreateTransfer(router: any, result: any) {
   const refId =
-    result?.referenceId || result?.ref || result?.id || result?.otpRef || result?.otp?.refId;
+    result?.referenceId ||
+    result?.ref ||
+    result?.id ||
+    result?.otpRef ||
+    result?.otp?.refId;
   saveLastTransfer({
     status: result?.status || "pending",
     rail: result?.rail || result?.type,
     amount:
       result?.amount && typeof result?.amount === "object"
         ? result?.amount
-        : { value: result?.amount ?? result?.usd ?? result?.value ?? 0, currency: result?.currency || "USD" },
+        : {
+            value:
+              result?.amount ??
+              result?.usd ??
+              result?.value ??
+              0,
+            currency: result?.currency || "USD",
+          },
     fees: result?.fees,
     sender: result?.sender,
     recipient: result?.recipient,
@@ -916,8 +974,10 @@ export async function meBalances() {
   // Prefer dedicated endpoint when available, else fall back to /users/me shape
   try {
     const acc = await API.myAccounts();
-    const checking = Number(acc?.checking?.available ?? acc?.checking ?? 0) || 0;
-    const savings = Number(acc?.savings?.available ?? acc?.savings ?? 0) || 0;
+    const checking =
+      Number(acc?.checking?.available ?? acc?.checking ?? 0) || 0;
+    const savings =
+      Number(acc?.savings?.available ?? acc?.savings ?? 0) || 0;
     return { checking, savings };
   } catch {
     const data = await API.me();
@@ -931,7 +991,9 @@ export async function meDisplayName() {
   const u: any = (data as any)?.user ?? data;
   const full =
     [u?.firstName, u?.lastName].filter(Boolean).join(" ").trim() ||
-    u?.fullName || u?.handle || "User";
+    u?.fullName ||
+    u?.handle ||
+    "User";
   return full;
 }
 
@@ -977,5 +1039,11 @@ export const adminDeleteNotification = API.adminDeleteNotification;
 /* avatar convenience exports */
 export const saveAvatar = API.saveAvatar;
 
+/* Forgot-password convenience exports */
+export const forgotPassword = API.forgotPassword;
+export const verifyResetCode = API.verifyResetCode;
+export const resetPassword = API.resetPassword;
+export const requestPasswordReset = API.requestPasswordReset;
+export const confirmPasswordReset = API.confirmPasswordReset;
 
 export default API;

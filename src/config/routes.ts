@@ -33,7 +33,8 @@ export const PATHS = {
   DASHBOARD_HOME: "/dashboard/dashboard",
   DASHBOARD_WELCOME: "/dashboard/welcome",
   DASHBOARD_ONBOARDING: "/dashboard/onboarding",
-  DASHBOARD_LOGIN: "/dashboard/loginpage", // ✅ added new login page
+  DASHBOARD_LOGIN: "/dashboard/loginpage",        // login page
+  DASHBOARD_FORGOT_PASSWORD: "/dashboard/forgotpassword", // 🔐 forgot password page
   NOTIFICATIONS: "/notifications",
   
   /* ---------- Transfer (App Router pages under src/app/Transfer) ---------- */
@@ -128,7 +129,8 @@ export const ROUTES: RouteItem[] = [
   { name: "Dashboard", path: PATHS.DASHBOARD_HOME, hidden: true },
   { name: "Dashboard Welcome", path: PATHS.DASHBOARD_WELCOME, hidden: true },
   { name: "Dashboard Onboarding", path: PATHS.DASHBOARD_ONBOARDING, hidden: true },
-  { name: "Dashboard Login", path: PATHS.DASHBOARD_LOGIN, hidden: true }, // ✅ added route entry
+  { name: "Dashboard Login", path: PATHS.DASHBOARD_LOGIN, hidden: true },
+  { name: "Dashboard Forgot Password", path: PATHS.DASHBOARD_FORGOT_PASSWORD, hidden: true },
 
   /* ---- Transfer routes (hidden in top nav, used in app) ----------------- */
   { name: "Transfer", path: PATHS.TRANSFER_ROOT, hidden: true },
