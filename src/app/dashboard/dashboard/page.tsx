@@ -148,6 +148,8 @@ const RAIL_LABELS: Record<string, string> = {
   ach: "ACH",
   ach_domestic: "ACH",
   crypto: "Crypto",
+  crypto_send: "Crypto",
+  crypto_receive: "Crypto",
   card: "Card",
   internal: "Internal",
 };
@@ -238,6 +240,7 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.sender ??
     input?.meta?.origin ??
     input?.meta?.from;
+
   const receiver =
     input?.beneficiary ??
     input?.to ??
@@ -284,15 +287,20 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.wise?.name
   );
 
-  // NEW: crypto / on-chain address (direction-aware)
+  // Crypto / on-chain address (direction-aware but also with broad fallbacks)
   const partyAddress = firstNonEmpty(
     party?.cryptoAddress,
     party?.address,
     input?.recipient?.cryptoAddress,
     input?.recipient?.address,
+    input?.crypto?.toAddress,
+    input?.crypto?.address,
     input?.meta?.crypto?.toAddress,
     input?.meta?.crypto?.address,
+    input?.meta?.cryptoTo,
     input?.meta?.toAddress,
+    input?.meta?.to,
+    input?.meta?.destinationAddress,
     input?.toAddress,
     input?.address
   );
@@ -359,7 +367,25 @@ function normalizeTx(input: any): TxnRowUnified | null {
   }
 
   const last4 = bankLast4 ? String(bankLast4).slice(-4) : undefined;
-  const addressMasked = partyAddress ? maskAddr(partyAddress) : undefined;
+
+  // Try primary address from pickParty
+  let addressMasked = partyAddress ? maskAddr(partyAddress) : undefined;
+  // Extra fallback for any stray address fields on crypto txns
+  if (!addressMasked) {
+    const fallbackAddr = firstNonEmpty(
+      input?.recipient?.cryptoAddress,
+      input?.recipient?.address,
+      input?.crypto?.toAddress,
+      input?.crypto?.address,
+      input?.meta?.crypto?.toAddress,
+      input?.meta?.crypto?.address,
+      input?.meta?.cryptoTo,
+      input?.meta?.toAddress,
+      input?.toAddress,
+      input?.address
+    );
+    if (fallbackAddr) addressMasked = maskAddr(fallbackAddr);
+  }
 
   // 4) Title (never provider/rail)
   const merchantRaw =
@@ -367,7 +393,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const merchantHuman =
     merchantRaw && !isProviderLabel(merchantRaw) ? merchantRaw : undefined;
 
-  const title =
+  let title =
     nameHuman ||
     merchantHuman ||
     (handle && !isProviderLabel(handle) ? handle : undefined) ||
@@ -397,17 +423,48 @@ function normalizeTx(input: any): TxnRowUnified | null {
         : undefined;
   }
 
+  // If title is still "Unknown" on a crypto rail, force an address-based title
+  if (
+    title === "Unknown" &&
+    rail &&
+    String(rail).toLowerCase().startsWith("crypto")
+  ) {
+    const addr = firstNonEmpty(
+      partyAddress,
+      input?.recipient?.cryptoAddress,
+      input?.recipient?.address,
+      input?.crypto?.toAddress,
+      input?.crypto?.address,
+      input?.meta?.crypto?.toAddress,
+      input?.meta?.crypto?.address,
+      input?.meta?.cryptoTo,
+      input?.meta?.toAddress,
+      input?.toAddress,
+      input?.address
+    );
+    if (addr) {
+      const masked = maskAddr(addr);
+      if (masked) {
+        title = masked;
+        if (!subtitle || isProviderLabel(subtitle)) {
+          subtitle = railPretty;
+        }
+      }
+    }
+  }
+
   // 6) Account kind
+  const railLower = rail ? String(rail).toLowerCase() : "";
   const account: TxnRowUnified["account"] =
     (input?.accountType as any) ||
-    (rail &&
+    (railLower &&
     [
       "crypto",
       "crypto_buy",
       "crypto_swap",
       "crypto_send",
       "crypto_receive",
-    ].includes(String(rail).toLowerCase())
+    ].includes(railLower)
       ? "Crypto"
       : "Checking");
 
@@ -416,7 +473,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const crypto =
     cryptoRow && {
       symbol: cryptoRow.symbol || "BTC",
-      amount: num(cryptoRow.amount ?? cryptoRow.qty), // coin units, positive
+      amount: Math.abs(num(cryptoRow.amount ?? cryptoRow.qty)), // coin units, positive
       usdAtExecution: num(cryptoRow.usdAtExecution ?? cryptoRow.price),
       side:
         (cryptoRow.side as any) ||
@@ -667,7 +724,9 @@ export default function DashboardPage() {
               )
             );
           }
-        } catch {}
+        } catch {
+          // ignore; empty notifications panel
+        }
       } catch {
         router.replace("/dashboard/loginpage");
       }
@@ -964,7 +1023,7 @@ export default function DashboardPage() {
                   {userName || "User"}
                 </div>
               </div>
-              <div className="h-10 w-10 rounded-full overflow-hidden bg-white/10 border border-white/20">
+              <div className="h-10 w-10 rounded-full overflow-hidden bg.white/10 bg-white/10 border border-white/20">
                 {profileAvatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1003,7 +1062,7 @@ export default function DashboardPage() {
                 <ArrowUpRight size={14} /> Transfer
               </button>
               <button
-                className="px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 flex items-center gap-2 shadow-lg transition-all text-sm"
+                className="px-4 py-2.5 rounded-full bg-white/10 hover:bg.white/15 bg-white/10 hover:bg-white/15 border border-white/20 flex items-center gap-2 shadow-lg transition-all text-sm"
                 onClick={openInsights}
               >
                 <BarChart3 size={14} /> Insights
@@ -1074,7 +1133,7 @@ export default function DashboardPage() {
       <section className="container-x mt-10">
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl ring-1 ring-white/5">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold">Spending & income</h2>
+            <h2 className="text-lg font-semibold">Spending &amp; income</h2>
             <div className="flex items-center gap-2 text-xs">
               <button
                 onClick={prevMonth}
@@ -1273,7 +1332,7 @@ export default function DashboardPage() {
               sub="Income − spend"
             />
             <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-              <div className="text-base text-white/80 mb-3 font-semibold">
+              <div className="text-base text.white/80 text-white/80 mb-3 font-semibold">
                 Top categories
               </div>
               <ul className="space-y-3 text-sm text-white/70">
@@ -1320,7 +1379,7 @@ export default function DashboardPage() {
               Monthly trend
             </div>
             <p className="text-xs text-white/60">
-              Net inflows vs outflows across your recent months.
+              Net inflows vs outflows across each recent month.
             </p>
             <div className="mt-4">
               <MiniTrendChart points={monthlyTrend} height={120} />
@@ -1331,8 +1390,8 @@ export default function DashboardPage() {
               Rail split
             </div>
             <p className="text-xs text-white/60 mb-3">
-              How your volume is distributed across rails like ACH, Zelle,
-              PayPal, crypto and more.
+              How your volume is distributed across ACH, wires, P2P and
+              crypto rails.
             </p>
             {railSummary.slice(0, 5).length === 0 ? (
               <div className="text-sm text-white/55">
