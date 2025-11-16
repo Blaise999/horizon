@@ -41,7 +41,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Calendar,
-  Loader2, // ⬅ spinner for avatar upload
+  Loader2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import API, { request, uploadAvatarUnsigned, saveAvatar } from "@/libs/api";
@@ -77,14 +77,14 @@ type TxnRowUnified = {
   account: "Checking" | "Savings" | "Crypto" | "Unknown";
   rail?: string;
   category: string;
-  title: string; // human name/handle — never provider
-  subtitle?: string; // handle/email/phone or Acct••••
+  title: string; // human name/handle/address — never provider
+  subtitle?: string; // handle/email/phone/acct or rail
   direction: "sent" | "received";
   note?: string;
   ref?: string;
   crypto?: {
     symbol: string;
-    amount: number;
+    amount: number; // coin units (positive)
     usdAtExecution: number;
     side: "buy" | "sell" | "receive" | "send";
   };
@@ -198,6 +198,14 @@ function maskPhone(phone?: string) {
   return `•••${d.slice(-4)}`;
 }
 
+/** Mask a crypto / on-chain address into something human-ish */
+function maskAddr(addr?: string) {
+  if (!addr) return undefined;
+  const s = String(addr).trim();
+  if (s.length <= 12) return s;
+  return `${s.slice(0, 6)}…${s.slice(-4)}`;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Totals                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -276,6 +284,19 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.wise?.name
   );
 
+  // NEW: crypto / on-chain address (direction-aware)
+  const partyAddress = firstNonEmpty(
+    party?.cryptoAddress,
+    party?.address,
+    input?.recipient?.cryptoAddress,
+    input?.recipient?.address,
+    input?.meta?.crypto?.toAddress,
+    input?.meta?.crypto?.address,
+    input?.meta?.toAddress,
+    input?.toAddress,
+    input?.address
+  );
+
   const bankLast4 = firstNonEmpty(
     party?.bank?.last4,
     input?.bank?.last4,
@@ -285,7 +306,7 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.bank?.account
   );
 
-  return { partyName, partyHandle, bankLast4 };
+  return { partyName, partyHandle, bankLast4, partyAddress };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -299,7 +320,8 @@ function normalizeTx(input: any): TxnRowUnified | null {
     input?.amount ??
     input?.meta?.amount ??
     0;
-  const amt = num(rawAmt);
+  let amt = num(rawAmt);
+
   let direction: "sent" | "received";
   if (typeof input?.direction === "string") {
     const d = String(input.direction).toLowerCase();
@@ -307,6 +329,8 @@ function normalizeTx(input: any): TxnRowUnified | null {
   } else {
     direction = amt < 0 ? "sent" : "received";
   }
+
+  // Make sure we store signed USD (− sent / + received)
   const signed =
     direction === "sent" ? -Math.abs(Math.abs(amt)) : Math.abs(Math.abs(amt));
 
@@ -315,8 +339,11 @@ function normalizeTx(input: any): TxnRowUnified | null {
     (input?.rail as string | undefined) ||
     (input?.meta?.rail as string | undefined);
 
-  // 3) Counterparty (direction-aware)
-  const { partyName, partyHandle, bankLast4 } = pickParty(input, direction);
+  // 3) Counterparty (direction-aware) — includes crypto address
+  const { partyName, partyHandle, bankLast4, partyAddress } = pickParty(
+    input,
+    direction
+  );
 
   // Name: drop provider-like strings
   const nameHuman =
@@ -324,17 +351,15 @@ function normalizeTx(input: any): TxnRowUnified | null {
 
   // Handle/email/phone prettification
   let handle = partyHandle;
-  // if it's an email and name is missing, turn local-part into a friendly display
   if (!nameHuman && handle && /@/.test(handle)) {
     handle = prettifyEmailLocal(handle) || handle;
   }
-  // if it's a raw phone, mask it
   if (!nameHuman && handle && /^\+?[\d\s().-]+$/.test(handle)) {
     handle = maskPhone(handle) || handle;
   }
 
-  // Bank last4 normalize
   const last4 = bankLast4 ? String(bankLast4).slice(-4) : undefined;
+  const addressMasked = partyAddress ? maskAddr(partyAddress) : undefined;
 
   // 4) Title (never provider/rail)
   const merchantRaw =
@@ -346,19 +371,26 @@ function normalizeTx(input: any): TxnRowUnified | null {
     nameHuman ||
     merchantHuman ||
     (handle && !isProviderLabel(handle) ? handle : undefined) ||
+    addressMasked || // use masked address as a human-ish title
     (last4 ? `Acct ••••${last4}` : "Unknown");
 
   // 5) Subtitle — prefer a different signal from title
   const railPretty = prettyRail(rail);
+
   let subtitle: string | undefined =
     nameHuman && handle
       ? handle
       : !nameHuman && last4 && title !== `Acct ••••${last4}`
       ? `Acct ••••${last4}`
+      : addressMasked && addressMasked !== title
+      ? addressMasked
       : railPretty;
 
-  if (subtitle && subtitle.trim().toLowerCase() === title.trim().toLowerCase()) {
-    // avoid duplicates like when title is the handle
+  if (
+    subtitle &&
+    subtitle.trim().toLowerCase() === title.trim().toLowerCase()
+  ) {
+    // avoid duplicates (e.g. when title is already the handle)
     subtitle =
       railPretty && railPretty.toLowerCase() !== title.toLowerCase()
         ? railPretty
@@ -384,7 +416,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const crypto =
     cryptoRow && {
       symbol: cryptoRow.symbol || "BTC",
-      amount: num(cryptoRow.amount ?? cryptoRow.qty),
+      amount: num(cryptoRow.amount ?? cryptoRow.qty), // coin units, positive
       usdAtExecution: num(cryptoRow.usdAtExecution ?? cryptoRow.price),
       side:
         (cryptoRow.side as any) ||
@@ -620,7 +652,7 @@ export default function DashboardPage() {
           console.warn("txns fetch error", e);
         }
 
-        // Notifications
+        // Notifications / activities
         try {
           const acts = await request<{ items: any[] }>(
             "/users/me/activities"
@@ -630,7 +662,8 @@ export default function DashboardPage() {
             setActivities(
               list.sort(
                 (a, b) =>
-                  new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+                  new Date(b.createdAt || 0).getTime() -
+                  new Date(a.createdAt || 0).getTime()
               )
             );
           }
@@ -795,22 +828,18 @@ export default function DashboardPage() {
     fileInputRef.current?.click();
   }
 
-  // ⬇ REPLACED: local FileReader preview → Cloudinary unsigned upload + save
+  // Avatar change → Cloudinary → save → broadcast
   async function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setAvatarError(null);
     setAvatarUploading(true);
     try {
-      // Upload to Cloudinary (unsigned preset from env)
       const url = await uploadAvatarUnsigned(file, {
         folder: "horizon/avatars",
       });
-      // Persist on backend
       await saveAvatar(url); // PATCH /users/me/profile { avatarUrl: url }
-      // Update UI
       setProfileAvatar(url);
-      // Optional: let the Nav (or any listener) know immediately
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("horizon:profile-updated", {
@@ -826,7 +855,6 @@ export default function DashboardPage() {
       setAvatarError(err?.message || "Failed to upload avatar.");
     } finally {
       setAvatarUploading(false);
-      // clear input so selecting the same file again re-triggers change
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -835,7 +863,6 @@ export default function DashboardPage() {
     setAvatarError(null);
     setAvatarUploading(true);
     try {
-      // Clear on backend (empty string is fine; backend can interpret as unset)
       await API.updateProfile({ avatarUrl: "" });
       setProfileAvatar(null);
       if (typeof window !== "undefined") {
@@ -863,7 +890,6 @@ export default function DashboardPage() {
         firstName: profileFirst,
         lastName: profileLast,
         address: { street1: profileAddress },
-        // avatarUrl already saved during upload, but keep it in sync if present:
         avatarUrl: profileAvatar || undefined,
       });
       await API.updatePreferences({
@@ -924,10 +950,10 @@ export default function DashboardPage() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenSupport={() => setShowSettings(true)}
         onOpenProfile={() => setShowSettings(true)}
-        {...({ avatarUrl: profileAvatar || undefined } as any)} // if Nav supports it, it updates immediately
+        {...({ avatarUrl: profileAvatar || undefined } as any)}
       />
 
-      {/* Modernized Hero / balances - Centered, vertical layout, enhanced gradients and shadows */}
+      {/* Hero / balances */}
       <section className="pt-[100px] container-x">
         <div className="max-w-4xl mx-auto space-y-8">
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#101826]/80 to-[#0B0F14]/80 p-8 shadow-2xl backdrop-blur-lg ring-1 ring-white/5">
@@ -951,12 +977,12 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
-            <div className="mt-6 text-sm text-white/70">Total Assets</div>
+            <div className="mt-6 text-sm text-white/70">Total assets</div>
             <div className="text-5xl font-bold mt-1 tracking-tight">
               ${totalAssets.toLocaleString()}
             </div>
             <div className="text-xs text-white/50 mt-2">
-              All accounts including crypto
+              Combined balances across fiat and crypto accounts.
             </div>
             <div className="flex gap-4 text-xs text-white/60 mt-3">
               <span>Fiat: ${totalFiat.toLocaleString()}</span>
@@ -985,7 +1011,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Enhanced Accounts - Larger icons, subtitles with details, subtle hover animations, crypto with portfolio view */}
+          {/* Accounts row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <AccountCard
               label="Checking"
@@ -1017,7 +1043,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Modernized Quick Actions - Rounded full, larger icons, horizontal scroll on mobile */}
+      {/* Quick actions */}
       <section className="container-x mt-10">
         <div className="text-sm text-white/70 mb-4">Quick actions</div>
         <div className="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory">
@@ -1044,11 +1070,11 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Enhanced Insights - Cleaner stats, added trend icons, mini chart powered by txns */}
+      {/* Insights section */}
       <section className="container-x mt-10">
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl ring-1 ring-white/5">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold">Spending & Income</h2>
+            <h2 className="text-lg font-semibold">Spending & income</h2>
             <div className="flex items-center gap-2 text-xs">
               <button
                 onClick={prevMonth}
@@ -1075,17 +1101,17 @@ export default function DashboardPage() {
             <InsightStat
               label="Sent (this month)"
               value={fmtMoney(monthSentRecv.sent)}
-              trend="—"
+              trend="Total outflows this month"
             />
             <InsightStat
               label="Received (this month)"
               value={fmtMoney(monthSentRecv.received)}
-              trend="—"
+              trend="Total inflows this month"
             />
             <InsightStat
               label="Net (this month)"
               value={fmtMoney(monthSentRecv.net)}
-              trend={monthSentRecv.net >= 0 ? "▲ positive" : "▼ negative"}
+              trend={monthSentRecv.net >= 0 ? "Net positive" : "Net negative"}
               positive={monthSentRecv.net >= 0}
             />
           </div>
@@ -1106,10 +1132,10 @@ export default function DashboardPage() {
           {/* Mini chart using monthly net trend */}
           <div className="mt-6 pt-4 border-t border-white/10">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm text-white/70">Monthly trend</div>
+              <div className="text-sm text-white/70">Monthly net trend</div>
               {monthlyTrend.length > 0 && (
                 <div className="text-[11px] text-white/50">
-                  Last {monthlyTrend.length} months • Net flow
+                  Last {monthlyTrend.length} months • Net inflow vs outflow
                 </div>
               )}
             </div>
@@ -1118,10 +1144,10 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Recent Activity - Kept similar but with enhanced row styling */}
+      {/* Recent Activity */}
       <section className="container-x mt-10 pb-32">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Recent Activity</h2>
+          <h2 className="text-lg font-semibold">Recent activity</h2>
           <button
             onClick={openTransactions}
             className="text-sm text-[#00E0FF] hover:underline flex items-center gap-2 transition-all"
@@ -1136,11 +1162,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             txns.slice(0, 5).map((t) => (
-              <TxnRow
-                key={t.id}
-                t={t}
-                onClick={() => handleOpenTxn(t)}
-              />
+              <TxnRow key={t.id} t={t} onClick={() => handleOpenTxn(t)} />
             ))
           )}
         </div>
@@ -1193,10 +1215,7 @@ export default function DashboardPage() {
               <div className="text-xs uppercase tracking-wide text-white/60 mb-3">
                 Account details
               </div>
-              <KeyVal
-                k="Routing number"
-                v={routingNumber || "—"}
-              />
+              <KeyVal k="Routing number" v={routingNumber || "—"} />
               <KeyVal
                 k="Account number"
                 v={maskAccount(accountNumber) || "—"}
@@ -1217,7 +1236,7 @@ export default function DashboardPage() {
               className="mt-3 inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20 shadow-md transition-all"
               onClick={openCrypto}
             >
-              <CreditCard size={18} /> Manage Crypto
+              <CreditCard size={18} /> Manage crypto
             </button>
           </div>
         </div>
@@ -1228,33 +1247,30 @@ export default function DashboardPage() {
         onClose={() => setShowTransactions(false)}
         title="Transactions"
       >
-        <TransactionsPanel
-          txns={txns}
-          onOpenTxn={handleOpenTxn}
-        />
+        <TransactionsPanel txns={txns} onOpenTxn={handleOpenTxn} />
       </Sheet>
 
       <Sheet
         open={showAnalytics}
         onClose={() => setShowAnalytics(false)}
-        title="Spending Insights"
+        title="Spending insights"
       >
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="space-y-5">
             <StatCard
-              k="This month Sent"
+              k="This month sent"
               v={fmtMoney(monthSentRecv.sent)}
               sub="Outflows this month"
             />
             <StatCard
-              k="This month Received"
+              k="This month received"
               v={fmtMoney(monthSentRecv.received)}
               sub="Inflows this month"
             />
             <StatCard
-              k="YTD Net"
+              k="YTD net"
               v={fmtMoney(ytd.received - ytd.sent)}
-              sub="Income − Spend"
+              sub="Income − spend"
             />
             <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
               <div className="text-base text-white/80 mb-3 font-semibold">
@@ -1316,7 +1332,7 @@ export default function DashboardPage() {
             </div>
             <p className="text-xs text-white/60 mb-3">
               How your volume is distributed across rails like ACH, Zelle,
-              PayPal and more.
+              PayPal, crypto and more.
             </p>
             {railSummary.slice(0, 5).length === 0 ? (
               <div className="text-sm text-white/55">
@@ -1330,10 +1346,7 @@ export default function DashboardPage() {
                       ? (r.total / totalRailVolume) * 100
                       : 0;
                   return (
-                    <div
-                      key={r.rail}
-                      className="space-y-1"
-                    >
+                    <div key={r.rail} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
                         <span>{r.rail}</span>
                         <span className="text-white/55">
@@ -1651,7 +1664,7 @@ function CryptoCard({
       ? change24hValue >= 0
         ? "#33D69F"
         : "#FF4D4F"
-      : "#FFFFFF40"; // fallback when change24h is undefined
+      : "#FFFFFF40";
 
   const assetsLabel =
     typeof assetsCount === "number" && assetsCount > 0
@@ -1938,6 +1951,16 @@ function TxnRow({
     t.subtitle &&
     t.subtitle.trim().toLowerCase() !== titleText.trim().toLowerCase();
 
+  const hasCrypto =
+    !!t.crypto && Number.isFinite(Number(t.crypto.amount)) && t.crypto.amount !== 0;
+  const cryptoSymbol = t.crypto?.symbol
+    ? String(t.crypto.symbol).toUpperCase()
+    : undefined;
+
+  const primaryCryptoAmount = hasCrypto
+    ? Math.abs(Number(t.crypto!.amount))
+    : null;
+
   return (
     <button
       type="button"
@@ -1965,8 +1988,7 @@ function TxnRow({
           </div>
 
           <div className="text-sm text-white/60 truncate">
-            {railLabel} • {t.account} •{" "}
-            {date.toLocaleDateString()}
+            {railLabel} • {t.account} • {date.toLocaleDateString()}
           </div>
 
           {showSubtitle && (
@@ -1982,13 +2004,22 @@ function TxnRow({
         </div>
       </div>
 
-      <div
-        className={`text-base font-bold tabular-nums text-right shrink-0 ${
-          isIncome ? "text-emerald-400" : "text-rose-400"
-        }`}
-      >
-        {isIncome ? "+" : "−"}
-        {fmtMoney(Math.abs(t.amount))}
+      <div className="text-right shrink-0">
+        <div
+          className={`text-base font-bold tabular-nums ${
+            isIncome ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
+          {isIncome ? "+" : "−"}
+          {hasCrypto && cryptoSymbol && primaryCryptoAmount !== null
+            ? `${primaryCryptoAmount.toFixed(6)} ${cryptoSymbol}`
+            : fmtMoney(Math.abs(t.amount))}
+        </div>
+        {hasCrypto && (
+          <div className="text-xs text-white/60 mt-0.5 tabular-nums">
+            ≈ {fmtMoney(Math.abs(t.amount))}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -2287,7 +2318,6 @@ function MiniTrendChart({
   const padX = 4;
   const padY = 4;
 
-  // pull out just the numeric values once
   const values = points.map((p) => p.net);
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -2299,7 +2329,6 @@ function MiniTrendChart({
       : padX + ((width - padX * 2) * i) / (values.length - 1)
   );
 
-  // 🔧 FIX: map over numeric `values`, not `{label, net}` points
   const ys = values.map((v) => {
     const normalized = (v - min) / span;
     return padY + (h - padY * 2) * (1 - normalized);
@@ -2351,7 +2380,6 @@ function MiniTrendChart({
     </div>
   );
 }
-
 
 /* -------------------------------- Utilities -------------------------------- */
 function maskAccount(acct?: string) {
