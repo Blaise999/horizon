@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Copy,
 } from "lucide-react";
-// ✅ your client lives at src/lib/api.ts (singular)
 import { getPendingByRef } from "@/libs/api";
 
 /**
@@ -52,7 +51,8 @@ type Money = { value: number; currency: string };
 type PendingSummary = {
   status: PendingStatus;
   type: RailType;
-  /** raw rail straight from backend: e.g. "crypto_buy" | "crypto_swap" | "crypto_send" */
+
+  /** raw rail straight from backend: e.g. "crypto_buy" | "crypto_send" */
   railRaw?: string;
   /** normalized crypto kind */
   cryptoKind?: "buy" | "swap" | "send";
@@ -98,11 +98,7 @@ function firstTruthy(...vals: any[]) {
       if (s) return s;
       continue;
     }
-    if (
-      typeof v === "number" ||
-      typeof v === "boolean" ||
-      v instanceof Date
-    ) {
+    if (typeof v === "number" || typeof v === "boolean" || v instanceof Date) {
       return String(v);
     }
     if (
@@ -151,80 +147,87 @@ function railLabel(t: RailType, net?: string) {
   }
 }
 
-/** Normalize backend payload → PendingSummary (tolerant to shape differences). */
+/** Normalize backend payload → PendingSummary (tolerant but not crazy). */
 function mapServerToSummary(src: any): PendingSummary {
-  // status
-  const rawStatus: string =
-    src?.status || src?.state || src?.phase || src?.transfer?.status || "pending";
+  const transfer = src?.transfer || {};
+  const payload = src?.payload || transfer?.payload || src?.ctx || {};
+  const meta = src?.meta || transfer?.meta || {};
 
+  /* ------------------------------ status ------------------------------ */
+  const rawStatus: string =
+    src?.status || src?.state || src?.phase || transfer?.status || "pending";
+
+  const statusLower = String(rawStatus || "").toLowerCase();
   const status: PendingStatus =
-    rawStatus.toLowerCase() === "otp_required"
+    statusLower === "otp_required"
       ? "otp_required"
-      : rawStatus.toLowerCase() === "processing"
+      : statusLower === "processing"
       ? "processing"
-      : rawStatus.toLowerCase() === "scheduled"
+      : statusLower === "scheduled"
       ? "scheduled"
-      : rawStatus.toLowerCase() === "completed"
+      : statusLower === "completed"
       ? "completed"
-      : rawStatus.toLowerCase() === "rejected"
+      : statusLower === "rejected"
       ? "rejected"
       : "pending";
 
-  // rail (normalize detailed rails -> high-level type)
-  const rawRail: string =
-    src?.type || src?.rail || src?.transfer?.rail || src?.meta?.rail || "ach";
+  /* ------------------------------- rail ------------------------------- */
+  const railRawSource: string =
+    src?.rail ||
+    src?.type ||
+    transfer?.rail ||
+    meta?.rail ||
+    payload?.rail ||
+    "ach";
+
+  const railRaw = String(railRawSource || "");
+  const railLower = railRaw.toLowerCase();
 
   let t: RailType = "ach";
   let cryptoKind: "buy" | "swap" | "send" | undefined;
 
-  if (
-    rawRail === "crypto_buy" ||
-    rawRail === "crypto_swap" ||
-    rawRail === "crypto_send"
-  ) {
+  if (railLower.startsWith("crypto")) {
     t = "crypto";
-    if (rawRail === "crypto_buy") cryptoKind = "buy";
-    else if (rawRail === "crypto_swap") cryptoKind = "swap";
-    else if (rawRail === "crypto_send") cryptoKind = "send";
+    if (railLower.includes("buy")) cryptoKind = "buy";
+    else if (railLower.includes("swap")) cryptoKind = "swap";
+    else if (railLower.includes("send")) cryptoKind = "send";
   } else if (
-    rawRail === "ach" ||
-    rawRail === "ach_same_day" ||
-    rawRail === "wire_domestic" ||
-    rawRail === "wire_international" ||
-    rawRail === "card_instant" ||
-    rawRail === "paypal" ||
-    rawRail === "wise" ||
-    rawRail === "revolut" ||
-    rawRail === "venmo" ||
-    rawRail === "zelle" ||
-    rawRail === "cashapp" ||
-    rawRail === "wechat" ||
-    rawRail === "alipay"
+    railLower === "ach" ||
+    railLower === "ach_same_day" ||
+    railLower === "wire_domestic" ||
+    railLower === "wire_international" ||
+    railLower === "card_instant" ||
+    railLower === "paypal" ||
+    railLower === "wise" ||
+    railLower === "revolut" ||
+    railLower === "venmo" ||
+    railLower === "zelle" ||
+    railLower === "cashapp" ||
+    railLower === "wechat" ||
+    railLower === "alipay"
   ) {
-    t = rawRail as RailType;
+    t = railLower as RailType;
   } else {
-    // fall back – in case backend sends something slightly different
-    t = (rawRail as RailType) || "ach";
+    t = (railLower as RailType) || "ach";
   }
 
-  const payload = src?.payload || src?.transfer?.payload || src?.ctx || {};
+  const isCryptoRail = t === "crypto";
 
-  // 🔹 crypto meta (symbol / qty / address / network) from many possible shapes
+  /* --------------------------- crypto details -------------------------- */
   const cryptoMeta =
     src?.crypto ||
-    src?.meta?.crypto ||
-    src?.transfer?.crypto ||
-    src?.transfer?.meta?.crypto ||
-    src?.ctx?.crypto ||
-    src?.payload?.crypto ||
+    meta?.crypto ||
+    transfer?.crypto ||
+    transfer?.meta?.crypto ||
+    payload?.crypto ||
     undefined;
 
   const cryptoSymbolRaw =
     cryptoMeta?.symbol ||
     cryptoMeta?.asset ||
     cryptoMeta?.ticker ||
-    payload.fromSymbol ||
     payload.assetSymbol ||
+    payload.fromSymbol ||
     payload.toSymbol ||
     src?.cryptoSymbol ||
     src?.symbol ||
@@ -248,89 +251,127 @@ function mapServerToSummary(src: any): PendingSummary {
       ? asNumber(src.amountCrypto)
       : undefined;
 
+  // Backend shape you showed: src.recipient already exists; for crypto you’ll
+  // extend it with cryptoAddress + network. We still fall back to other fields.
   const cryptoAddress = firstTruthy(
+    src?.recipient?.cryptoAddress,
+    src?.recipient?.address,
     src?.cryptoAddress,
     src?.toAddress,
     src?.address,
-    cryptoMeta?.address,
-    cryptoMeta?.toAddress,
-    src?.payload?.cryptoAddress,
-    src?.ctx?.cryptoAddress,
-    src?.ctx?.toAddress,
+    payload.cryptoAddress,
     payload.toAddress
   );
 
   const cryptoNetwork = firstTruthy(
+    src?.recipient?.network,
     src?.network,
     src?.blockchain,
     src?.chain,
-    src?.transfer?.network,
+    transfer?.network,
     cryptoMeta?.network,
     cryptoMeta?.chain,
     cryptoMeta?.blockchain,
-    src?.payload?.network,
-    src?.ctx?.network,
     payload.network
   );
 
-  // amount / fees (fiat)
+  /* -------------------------- amounts / fees --------------------------- */
   const amountObj =
     src?.amount ??
-    src?.transfer?.amount ?? {
-      value: src?.usd ?? src?.value ?? src?.total ?? 0,
-      currency: src?.currency ?? "USD",
+    transfer?.amount ??
+    payload.amount ?? {
+      value:
+        src?.usd ??
+        src?.value ??
+        src?.total ??
+        payload.usd ??
+        payload.total ??
+        0,
+      currency: src?.currency ?? payload.currency ?? "USD",
     };
 
-  const appFee = src?.fees?.app ?? src?.fee ?? undefined;
-  const netFee =
-    src?.fees?.network ?? src?.networkFee ?? src?.fees?.net ?? undefined;
-  const feeCcy =
-    src?.fees?.currency ?? src?.feeCurrency ?? amountObj?.currency ?? "USD";
+  const appFee =
+    src?.fees?.app ??
+    src?.fee ??
+    transfer?.fee ??
+    payload.fee ??
+    payload.appFee ??
+    undefined;
 
-  // sender
+  const netFee =
+    src?.fees?.network ??
+    src?.networkFee ??
+    src?.fees?.net ??
+    payload.networkFee ??
+    payload.netFee ??
+    undefined;
+
+  const feeCcy =
+    src?.fees?.currency ??
+    src?.feeCurrency ??
+    payload.feeCurrency ??
+    amountObj?.currency ??
+    "USD";
+
+  /* ----------------------- sender / recipient info ---------------------- */
   const sender = {
     accountName:
       src?.fromAccount ??
-      src?.sender?.accountName ??
-      src?.transfer?.fromAccount ??
+      payload.fromAccount ??
+      payload.fromName ??
+      transfer?.fromAccount ??
       undefined,
     accountMasked:
       src?.sender?.accountMasked ??
-      src?.transfer?.sender?.accountMasked ??
+      transfer?.sender?.accountMasked ??
+      payload.fromMask ??
+      payload.fromAccountMasked ??
       undefined,
   };
 
-  // recipient
+  const recBase = src?.recipient || transfer?.recipient || payload.recipient || {};
   const recipient = {
     name: firstTruthy(
-      src?.recipient?.name,
+      recBase.name,
       src?.to?.name,
       src?.beneficiary?.name,
       src?.payee?.name,
       src?.counterparty?.name,
       src?.recipient,
-      src?.to
+      src?.to,
+      payload.to,
+      payload.recipientName
     ),
     email: firstTruthy(
+      recBase.email,
       src?.beneficiary?.email,
       src?.payee?.email,
       src?.toEmail,
-      src?.email
+      src?.email,
+      payload.email,
+      payload.toEmail
     ),
     tag: firstTruthy(
+      recBase.tag,
       src?.payee?.tag,
       src?.toTag,
       src?.handle,
       src?.toHandle,
-      src?.cashtag
+      src?.cashtag,
+      payload.tag,
+      payload.handle,
+      payload.cashtag
     ),
     accountMasked: firstTruthy(
+      recBase.accountMasked,
       src?.recipientAccountMasked,
       src?.beneficiary?.accountMasked,
       src?.payee?.accountRef,
-      src?.accountMasked
+      src?.accountMasked,
+      payload.acct,
+      payload.accountMasked
     ),
-    cryptoAddress,
+    cryptoAddress: cryptoAddress,
     network: cryptoNetwork,
   };
 
@@ -358,9 +399,13 @@ function mapServerToSummary(src: any): PendingSummary {
   return {
     status,
     type: t,
-    railRaw: rawRail,
+    railRaw: railRawSource,
     cryptoKind,
-    createdAt: src?.createdAt || new Date().toISOString(),
+    createdAt:
+      src?.createdAt ||
+      transfer?.createdAt ||
+      payload.createdAt ||
+      new Date().toISOString(),
     etaText,
     amount: {
       value: asNumber(amountObj?.value ?? amountObj),
@@ -377,11 +422,18 @@ function mapServerToSummary(src: any): PendingSummary {
       src?.referenceId ||
       src?.ref ||
       src?.id ||
-      src?.transfer?.referenceId ||
+      transfer?.referenceId ||
       "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
     cancelable:
       typeof src?.cancelable === "boolean" ? src.cancelable : true,
-    note: firstTruthy(src?.note, src?.memo, src?.reference, src?.description),
+    note: firstTruthy(
+      src?.note,
+      src?.memo,
+      src?.reference,
+      src?.description,
+      payload.note,
+      payload.memo
+    ),
     cryptoAmount,
     cryptoSymbol: cryptoSymbolRaw
       ? String(cryptoSymbolRaw).toUpperCase()
@@ -453,7 +505,10 @@ function mapQueryToSummary(params: URLSearchParams): PendingSummary {
       network: q("net", "") || undefined,
     },
     referenceId:
-      q("ref", "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase()),
+      q(
+        "ref",
+        "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase()
+      ),
     cancelable: q("cancelable", "1") === "1",
     note: q("note", "") || undefined,
     cryptoAmount: cryptoAmtRaw ? Number(cryptoAmtRaw) : undefined,
@@ -582,25 +637,44 @@ export default function Pending() {
         })
       : "—";
 
-  // 🔹 Amount display: show "0.00 BTC • $X.XX" for crypto
+  // 🔹 Amount display: for crypto rails try "0.000xx BTC • $56.14"
   const amountDisplay = useMemo(() => {
     if (!summary) return "—";
+
     const fiat = fmtMoney(
       summary.amount?.value,
       summary.amount?.currency || "USD"
     );
+
+    const isCryptoRail =
+      summary.type === "crypto" ||
+      (summary.railRaw &&
+        String(summary.railRaw).toLowerCase().startsWith("crypto"));
+
     if (
-      summary.type === "crypto" &&
+      isCryptoRail &&
       typeof summary.cryptoAmount === "number" &&
       summary.cryptoSymbol
     ) {
       return `${summary.cryptoAmount} ${summary.cryptoSymbol.toUpperCase()} • ${fiat}`;
     }
+
     return fiat;
   }, [summary]);
 
   const recipientPretty = useMemo(() => {
     if (!summary?.recipient) return "Recipient";
+
+    // For crypto rails prefer address/network in the label
+    const isCryptoRail =
+      summary.type === "crypto" ||
+      (summary.railRaw &&
+        String(summary.railRaw).toLowerCase().startsWith("crypto"));
+
+    if (isCryptoRail && summary.recipient.cryptoAddress) {
+      return maskAddr(summary.recipient.cryptoAddress);
+    }
+
     return (
       summary.recipient.name ||
       summary.recipient.email ||
@@ -624,18 +698,14 @@ export default function Pending() {
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-semibold">
-                {loading
-                  ? "Loading…"
-                  : `Transfer ${statusBadge.label}`}
+                {loading ? "Loading…" : `Transfer ${statusBadge.label}`}
               </h1>
               <p className="text-white/70 mt-1">
                 {summary ? (
                   <>
                     Created{" "}
                     {new Date(summary.createdAt).toLocaleString()} • Ref:{" "}
-                    <span className="font-mono">
-                      {summary.referenceId}
-                    </span>
+                    <span className="font-mono">{summary.referenceId}</span>
                   </>
                 ) : (
                   "—"
