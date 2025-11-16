@@ -4,7 +4,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Nav from "@/app/dashboard/dashboardnav";
-import { Clock, CheckCircle2, AlertTriangle, ShieldQuestion, ArrowRight, Copy } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  ShieldQuestion,
+  ArrowRight,
+  Copy,
+} from "lucide-react";
 // ✅ your client lives at src/lib/api.ts (singular)
 import { getPendingByRef } from "@/libs/api";
 
@@ -32,13 +39,24 @@ type RailType =
   | "alipay"
   | "crypto";
 
-type PendingStatus = "pending" | "processing" | "scheduled" | "otp_required" | "completed" | "rejected";
+type PendingStatus =
+  | "pending"
+  | "processing"
+  | "scheduled"
+  | "otp_required"
+  | "completed"
+  | "rejected";
 
 type Money = { value: number; currency: string };
 
 type PendingSummary = {
   status: PendingStatus;
   type: RailType;
+  /** raw rail straight from backend: e.g. "crypto_buy" | "crypto_swap" | "crypto_send" */
+  railRaw?: string;
+  /** normalized crypto kind */
+  cryptoKind?: "buy" | "swap" | "send";
+
   createdAt: string;
   etaText?: string;
 
@@ -80,10 +98,18 @@ function firstTruthy(...vals: any[]) {
       if (s) return s;
       continue;
     }
-    if (typeof v === "number" || typeof v === "boolean" || v instanceof Date) {
+    if (
+      typeof v === "number" ||
+      typeof v === "boolean" ||
+      v instanceof Date
+    ) {
       return String(v);
     }
-    if (typeof v === "object" && typeof (v as any).name === "string" && (v as any).name.trim()) {
+    if (
+      typeof v === "object" &&
+      typeof (v as any).name === "string" &&
+      (v as any).name.trim()
+    ) {
       return (v as any).name.trim();
     }
   }
@@ -92,21 +118,36 @@ function firstTruthy(...vals: any[]) {
 
 function railLabel(t: RailType, net?: string) {
   switch (t) {
-    case "ach": return "ACH (Standard)";
-    case "ach_same_day": return "ACH (Same-day)";
-    case "wire_domestic": return "Wire (Domestic)";
-    case "wire_international": return "SWIFT / International";
-    case "card_instant": return "Card (Instant)";
-    case "paypal": return "PayPal";
-    case "wise": return "Wise";
-    case "revolut": return "Revolut";
-    case "venmo": return "Venmo";
-    case "zelle": return "Zelle";
-    case "cashapp": return "Cash App";
-    case "wechat": return "WeChat Pay";
-    case "alipay": return "Alipay";
-    case "crypto": return net ? `Crypto • ${net}` : "Crypto";
-    default: return "Transfer";
+    case "ach":
+      return "ACH (Standard)";
+    case "ach_same_day":
+      return "ACH (Same-day)";
+    case "wire_domestic":
+      return "Wire (Domestic)";
+    case "wire_international":
+      return "SWIFT / International";
+    case "card_instant":
+      return "Card (Instant)";
+    case "paypal":
+      return "PayPal";
+    case "wise":
+      return "Wise";
+    case "revolut":
+      return "Revolut";
+    case "venmo":
+      return "Venmo";
+    case "zelle":
+      return "Zelle";
+    case "cashapp":
+      return "Cash App";
+    case "wechat":
+      return "WeChat Pay";
+    case "alipay":
+      return "Alipay";
+    case "crypto":
+      return net ? `Crypto • ${net}` : "Crypto";
+    default:
+      return "Transfer";
   }
 }
 
@@ -114,27 +155,59 @@ function railLabel(t: RailType, net?: string) {
 function mapServerToSummary(src: any): PendingSummary {
   // status
   const rawStatus: string =
-    src?.status ||
-    src?.state ||
-    src?.phase ||
-    src?.transfer?.status ||
-    "pending";
+    src?.status || src?.state || src?.phase || src?.transfer?.status || "pending";
 
   const status: PendingStatus =
-    rawStatus.toLowerCase() === "otp_required" ? "otp_required" :
-    rawStatus.toLowerCase() === "processing" ? "processing" :
-    rawStatus.toLowerCase() === "scheduled" ? "scheduled" :
-    rawStatus.toLowerCase() === "completed" ? "completed" :
-    rawStatus.toLowerCase() === "rejected" ? "rejected" :
-    "pending";
+    rawStatus.toLowerCase() === "otp_required"
+      ? "otp_required"
+      : rawStatus.toLowerCase() === "processing"
+      ? "processing"
+      : rawStatus.toLowerCase() === "scheduled"
+      ? "scheduled"
+      : rawStatus.toLowerCase() === "completed"
+      ? "completed"
+      : rawStatus.toLowerCase() === "rejected"
+      ? "rejected"
+      : "pending";
 
-  // rail
-  const t: RailType =
-    (src?.type ||
-      src?.rail ||
-      src?.transfer?.rail ||
-      src?.meta?.rail ||
-      "ach") as RailType;
+  // rail (normalize detailed rails -> high-level type)
+  const rawRail: string =
+    src?.type || src?.rail || src?.transfer?.rail || src?.meta?.rail || "ach";
+
+  let t: RailType = "ach";
+  let cryptoKind: "buy" | "swap" | "send" | undefined;
+
+  if (
+    rawRail === "crypto_buy" ||
+    rawRail === "crypto_swap" ||
+    rawRail === "crypto_send"
+  ) {
+    t = "crypto";
+    if (rawRail === "crypto_buy") cryptoKind = "buy";
+    else if (rawRail === "crypto_swap") cryptoKind = "swap";
+    else if (rawRail === "crypto_send") cryptoKind = "send";
+  } else if (
+    rawRail === "ach" ||
+    rawRail === "ach_same_day" ||
+    rawRail === "wire_domestic" ||
+    rawRail === "wire_international" ||
+    rawRail === "card_instant" ||
+    rawRail === "paypal" ||
+    rawRail === "wise" ||
+    rawRail === "revolut" ||
+    rawRail === "venmo" ||
+    rawRail === "zelle" ||
+    rawRail === "cashapp" ||
+    rawRail === "wechat" ||
+    rawRail === "alipay"
+  ) {
+    t = rawRail as RailType;
+  } else {
+    // fall back – in case backend sends something slightly different
+    t = (rawRail as RailType) || "ach";
+  }
+
+  const payload = src?.payload || src?.transfer?.payload || src?.ctx || {};
 
   // 🔹 crypto meta (symbol / qty / address / network) from many possible shapes
   const cryptoMeta =
@@ -150,6 +223,9 @@ function mapServerToSummary(src: any): PendingSummary {
     cryptoMeta?.symbol ||
     cryptoMeta?.asset ||
     cryptoMeta?.ticker ||
+    payload.fromSymbol ||
+    payload.assetSymbol ||
+    payload.toSymbol ||
     src?.cryptoSymbol ||
     src?.symbol ||
     src?.asset ||
@@ -160,6 +236,12 @@ function mapServerToSummary(src: any): PendingSummary {
       ? asNumber(cryptoMeta.qty)
       : cryptoMeta?.amount != null
       ? asNumber(cryptoMeta.amount)
+      : payload.units != null
+      ? asNumber(payload.units)
+      : payload.amountUnits != null
+      ? asNumber(payload.amountUnits)
+      : payload.fromUnits != null
+      ? asNumber(payload.fromUnits)
       : src?.cryptoAmount != null
       ? asNumber(src.cryptoAmount)
       : src?.amountCrypto != null
@@ -174,7 +256,8 @@ function mapServerToSummary(src: any): PendingSummary {
     cryptoMeta?.toAddress,
     src?.payload?.cryptoAddress,
     src?.ctx?.cryptoAddress,
-    src?.ctx?.toAddress
+    src?.ctx?.toAddress,
+    payload.toAddress
   );
 
   const cryptoNetwork = firstTruthy(
@@ -186,18 +269,23 @@ function mapServerToSummary(src: any): PendingSummary {
     cryptoMeta?.chain,
     cryptoMeta?.blockchain,
     src?.payload?.network,
-    src?.ctx?.network
+    src?.ctx?.network,
+    payload.network
   );
 
   // amount / fees (fiat)
   const amountObj =
     src?.amount ??
-    src?.transfer?.amount ??
-    { value: src?.usd ?? src?.value ?? src?.total ?? 0, currency: src?.currency ?? "USD" };
+    src?.transfer?.amount ?? {
+      value: src?.usd ?? src?.value ?? src?.total ?? 0,
+      currency: src?.currency ?? "USD",
+    };
 
   const appFee = src?.fees?.app ?? src?.fee ?? undefined;
-  const netFee = src?.fees?.network ?? src?.networkFee ?? src?.fees?.net ?? undefined;
-  const feeCcy = src?.fees?.currency ?? src?.feeCurrency ?? amountObj?.currency ?? "USD";
+  const netFee =
+    src?.fees?.network ?? src?.networkFee ?? src?.fees?.net ?? undefined;
+  const feeCcy =
+    src?.fees?.currency ?? src?.feeCurrency ?? amountObj?.currency ?? "USD";
 
   // sender
   const sender = {
@@ -249,18 +337,29 @@ function mapServerToSummary(src: any): PendingSummary {
   const etaText =
     src?.etaText ||
     src?.eta ||
-    (t === "ach" ? "1–3 business days"
-      : t === "ach_same_day" ? "Same day (cutoff dependent)"
-      : t === "wire_domestic" ? "Same day before cutoff"
-      : t === "wire_international" ? "1–3 business days (bank dependent)"
-      : t === "card_instant" ? "Instant"
-      : t === "crypto" ? "1–3 confirmations"
-      : ["paypal","wise","revolut","venmo","zelle","cashapp","wechat","alipay"].includes(t) ? "Usually instant"
+    (t === "ach"
+      ? "1–3 business days"
+      : t === "ach_same_day"
+      ? "Same day (cutoff dependent)"
+      : t === "wire_domestic"
+      ? "Same day before cutoff"
+      : t === "wire_international"
+      ? "1–3 business days (bank dependent)"
+      : t === "card_instant"
+      ? "Instant"
+      : t === "crypto"
+      ? "1–3 confirmations"
+      : ["paypal", "wise", "revolut", "venmo", "zelle", "cashapp", "wechat", "alipay"].includes(
+          t
+        )
+      ? "Usually instant"
       : undefined);
 
   return {
     status,
     type: t,
+    railRaw: rawRail,
+    cryptoKind,
     createdAt: src?.createdAt || new Date().toISOString(),
     etaText,
     amount: {
@@ -275,12 +374,18 @@ function mapServerToSummary(src: any): PendingSummary {
     sender,
     recipient,
     referenceId:
-      src?.referenceId || src?.ref || src?.id || src?.transfer?.referenceId ||
+      src?.referenceId ||
+      src?.ref ||
+      src?.id ||
+      src?.transfer?.referenceId ||
       "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
-    cancelable: typeof src?.cancelable === "boolean" ? src.cancelable : true,
+    cancelable:
+      typeof src?.cancelable === "boolean" ? src.cancelable : true,
     note: firstTruthy(src?.note, src?.memo, src?.reference, src?.description),
-    cryptoAmount: cryptoAmount,
-    cryptoSymbol: cryptoSymbolRaw ? String(cryptoSymbolRaw).toUpperCase() : undefined,
+    cryptoAmount,
+    cryptoSymbol: cryptoSymbolRaw
+      ? String(cryptoSymbolRaw).toUpperCase()
+      : undefined,
   };
 }
 
@@ -291,44 +396,66 @@ function mapQueryToSummary(params: URLSearchParams): PendingSummary {
 
   const defaultEta =
     q("eta") ||
-    (type === "ach" ? "1–3 business days"
-      : type === "ach_same_day" ? "Same day (cutoff dependent)"
-      : type === "wire_domestic" ? "Same day before cutoff"
-      : type === "wire_international" ? "1–3 business days (bank dependent)"
-      : type === "card_instant" ? "Instant"
-      : type === "crypto" ? "1–3 confirmations"
-      : ["paypal","wise","revolut","venmo","zelle","cashapp","wechat","alipay"].includes(type) ? "Usually instant"
+    (type === "ach"
+      ? "1–3 business days"
+      : type === "ach_same_day"
+      ? "Same day (cutoff dependent)"
+      : type === "wire_domestic"
+      ? "Same day before cutoff"
+      : type === "wire_international"
+      ? "1–3 business days (bank dependent)"
+      : type === "card_instant"
+      ? "Instant"
+      : type === "crypto"
+      ? "1–3 confirmations"
+      : ["paypal", "wise", "revolut", "venmo", "zelle", "cashapp", "wechat", "alipay"].includes(
+          type
+        )
+      ? "Usually instant"
       : undefined);
 
   const cryptoSymbolRaw = q("cryptoSymbol", "");
   const cryptoAmtRaw = q("cryptoAmount", "");
+  const cryptoKindParam = q("cryptoKind", "").toLowerCase();
 
   return {
-    status: (q("status","pending") as PendingStatus),
+    status: q("status", "pending") as PendingStatus,
     type,
+    railRaw: type,
+    cryptoKind:
+      type === "crypto" &&
+      (cryptoKindParam === "buy" ||
+        cryptoKindParam === "swap" ||
+        cryptoKindParam === "send")
+        ? (cryptoKindParam as "buy" | "swap" | "send")
+        : undefined,
     createdAt: new Date().toISOString(),
     etaText: defaultEta,
-    amount: { value: Number(q("amount","0")) || 0, currency: q("ccy","USD") },
+    amount: {
+      value: Number(q("amount", "0")) || 0,
+      currency: q("ccy", "USD"),
+    },
     fees: {
       app: q("fee") ? Number(q("fee")) : undefined,
       network: q("netFee") ? Number(q("netFee")) : undefined,
-      currency: q("feeCcy","USD"),
+      currency: q("feeCcy", "USD"),
     },
     sender: {
-      accountName: q("fromName","Checking") || undefined,
-      accountMasked: q("fromMask","") || undefined,
+      accountName: q("fromName", "Checking") || undefined,
+      accountMasked: q("fromMask", "") || undefined,
     },
     recipient: {
-      name: q("to","") || undefined,
-      email: q("email","") || undefined,
-      tag: q("tag","") || undefined,
-      cryptoAddress: q("addr","") || undefined,
-      accountMasked: q("acct","") || undefined,
-      network: q("net","") || undefined,
+      name: q("to", "") || undefined,
+      email: q("email", "") || undefined,
+      tag: q("tag", "") || undefined,
+      cryptoAddress: q("addr", "") || undefined,
+      accountMasked: q("acct", "") || undefined,
+      network: q("net", "") || undefined,
     },
-    referenceId: q("ref", "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase()),
-    cancelable: q("cancelable","1") === "1",
-    note: q("note","") || undefined,
+    referenceId:
+      q("ref", "TX-" + Math.random().toString(36).slice(2, 8).toUpperCase()),
+    cancelable: q("cancelable", "1") === "1",
+    note: q("note", "") || undefined,
     cryptoAmount: cryptoAmtRaw ? Number(cryptoAmtRaw) : undefined,
     cryptoSymbol: cryptoSymbolRaw ? cryptoSymbolRaw.toUpperCase() : undefined,
   };
@@ -341,7 +468,9 @@ export default function Pending() {
   const params = useSearchParams();
 
   const [userName, setUserName] = useState("User");
-  const [setupPercent, setSetupPercent] = useState<number | undefined>(undefined);
+  const [setupPercent, setSetupPercent] = useState<number | undefined>(
+    undefined
+  );
   const [summary, setSummary] = useState<PendingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -367,14 +496,20 @@ export default function Pending() {
           setSummary(mapServerToSummary(server));
         } else {
           let ls: any = null;
-          try { const raw = localStorage.getItem("last_transfer"); if (raw) ls = JSON.parse(raw); } catch {}
+          try {
+            const raw = localStorage.getItem("last_transfer");
+            if (raw) ls = JSON.parse(raw);
+          } catch {}
           if (ls) setSummary(mapServerToSummary(ls));
           else setSummary(mapQueryToSummary(params as any));
         }
       } catch (e: any) {
         // fall back to ls/query if API fails
         let ls: any = null;
-        try { const raw = localStorage.getItem("last_transfer"); if (raw) ls = JSON.parse(raw); } catch {}
+        try {
+          const raw = localStorage.getItem("last_transfer");
+          if (raw) ls = JSON.parse(raw);
+        } catch {}
         if (ls) setSummary(mapServerToSummary(ls));
         else setSummary(mapQueryToSummary(params as any));
         setErr(e?.message || "Couldn’t load transfer details.");
@@ -395,7 +530,9 @@ export default function Pending() {
             const next = mapServerToSummary(server);
             return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
           });
-        } catch {/* ignore transient poll errors */}
+        } catch {
+          /* ignore transient poll errors */
+        }
       }, 6000) as unknown as number;
     }
 
@@ -406,22 +543,57 @@ export default function Pending() {
 
   // title/status
   const statusBadge = useMemo(() => {
-    if (!summary) return { label: "Pending", icon: <Clock className="h-5 w-5 text-yellow-300" /> };
-    if (summary.status === "completed") return { label: "Completed", icon: <CheckCircle2 className="h-5 w-5 text-emerald-300" /> };
-    if (summary.status === "rejected") return { label: "Rejected", icon: <AlertTriangle className="h-5 w-5 text-rose-300" /> };
-    if (summary.status === "scheduled") return { label: "Scheduled", icon: <Clock className="h-5 w-5 text-cyan-300" /> };
-    if (summary.status === "processing") return { label: "Processing", icon: <Clock className="h-5 w-5 text-cyan-300" /> };
-    return { label: "Pending", icon: <Clock className="h-5 w-5 text-yellow-300" /> };
+    if (!summary)
+      return {
+        label: "Pending",
+        icon: <Clock className="h-5 w-5 text-yellow-300" />,
+      };
+    if (summary.status === "completed")
+      return {
+        label: "Completed",
+        icon: <CheckCircle2 className="h-5 w-5 text-emerald-300" />,
+      };
+    if (summary.status === "rejected")
+      return {
+        label: "Rejected",
+        icon: <AlertTriangle className="h-5 w-5 text-rose-300" />,
+      };
+    if (summary.status === "scheduled")
+      return {
+        label: "Scheduled",
+        icon: <Clock className="h-5 w-5 text-cyan-300" />,
+      };
+    if (summary.status === "processing")
+      return {
+        label: "Processing",
+        icon: <Clock className="h-5 w-5 text-cyan-300" />,
+      };
+    return {
+      label: "Pending",
+      icon: <Clock className="h-5 w-5 text-yellow-300" />,
+    };
   }, [summary]);
 
   const fmtMoney = (n?: number, c = "USD") =>
-    typeof n === "number" ? n.toLocaleString(undefined, { style: "currency", currency: c }) : "—";
+    typeof n === "number"
+      ? n.toLocaleString(undefined, {
+          style: "currency",
+          currency: c,
+        })
+      : "—";
 
   // 🔹 Amount display: show "0.00 BTC • $X.XX" for crypto
   const amountDisplay = useMemo(() => {
     if (!summary) return "—";
-    const fiat = fmtMoney(summary.amount?.value, summary.amount?.currency || "USD");
-    if (summary.type === "crypto" && typeof summary.cryptoAmount === "number" && summary.cryptoSymbol) {
+    const fiat = fmtMoney(
+      summary.amount?.value,
+      summary.amount?.currency || "USD"
+    );
+    if (
+      summary.type === "crypto" &&
+      typeof summary.cryptoAmount === "number" &&
+      summary.cryptoSymbol
+    ) {
       return `${summary.cryptoAmount} ${summary.cryptoSymbol.toUpperCase()} • ${fiat}`;
     }
     return fiat;
@@ -452,14 +624,22 @@ export default function Pending() {
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-semibold">
-                {loading ? "Loading…" : `Transfer ${statusBadge.label}`}
+                {loading
+                  ? "Loading…"
+                  : `Transfer ${statusBadge.label}`}
               </h1>
               <p className="text-white/70 mt-1">
                 {summary ? (
                   <>
-                    Created {new Date(summary.createdAt).toLocaleString()} • Ref: <span className="font-mono">{summary.referenceId}</span>
+                    Created{" "}
+                    {new Date(summary.createdAt).toLocaleString()} • Ref:{" "}
+                    <span className="font-mono">
+                      {summary.referenceId}
+                    </span>
                   </>
-                ) : "—"}
+                ) : (
+                  "—"
+                )}
               </p>
               <p className="text-white/80 mt-2">
                 {summary?.status === "rejected"
@@ -471,7 +651,9 @@ export default function Pending() {
             </div>
           </div>
 
-          {err && <div className="mt-4 text-sm text-rose-300">{err}</div>}
+          {err && (
+            <div className="mt-4 text-sm text-rose-300">{err}</div>
+          )}
 
           {/* core info */}
           <div className="mt-6 grid sm:grid-cols-2 gap-4">
@@ -481,13 +663,18 @@ export default function Pending() {
               label="From account"
               value={
                 summary?.sender?.accountMasked
-                  ? `${summary?.sender?.accountName ?? "Account"} ${summary?.sender?.accountMasked}`
+                  ? `${summary?.sender?.accountName ?? "Account"} ${
+                      summary?.sender?.accountMasked
+                    }`
                   : summary?.sender?.accountName || "—"
               }
             />
             <Info
               label="Transfer rail"
-              value={railLabel(summary?.type || "ach", summary?.recipient?.network)}
+              value={railLabel(
+                summary?.type || "ach",
+                summary?.recipient?.network
+              )}
             />
           </div>
 
@@ -498,8 +685,20 @@ export default function Pending() {
               value={
                 summary?.fees
                   ? (() => {
-                      const app = summary.fees.app != null ? fmtMoney(summary.fees.app, summary.fees.currency || "USD") : "—";
-                      const net = summary.fees.network != null ? ` + network ${fmtMoney(summary.fees.network, summary.fees.currency || "USD")}` : "";
+                      const app =
+                        summary.fees.app != null
+                          ? fmtMoney(
+                              summary.fees.app,
+                              summary.fees.currency || "USD"
+                            )
+                          : "—";
+                      const net =
+                        summary.fees.network != null
+                          ? ` + network ${fmtMoney(
+                              summary.fees.network,
+                              summary.fees.currency || "USD"
+                            )}`
+                          : "";
                       return `${app}${net}`.trim();
                     })()
                   : "—"
@@ -516,23 +715,38 @@ export default function Pending() {
           )}
 
           {/* crypto specifics */}
-          {summary?.type === "crypto" && (summary?.recipient?.cryptoAddress || summary?.recipient?.network) && (
-            <div className="mt-4 grid sm:grid-cols-2 gap-4">
-              {summary.recipient.cryptoAddress && (
-                <Info
-                  label="Destination address"
-                  value={<Copyable text={summary.recipient.cryptoAddress} display={maskAddr(summary.recipient.cryptoAddress)} />}
-                />
-              )}
-              {summary.recipient.network && <Info label="Network" value={summary.recipient.network} />}
-            </div>
-          )}
+          {summary?.type === "crypto" &&
+            (summary?.recipient?.cryptoAddress ||
+              summary?.recipient?.network) && (
+              <div className="mt-4 grid sm:grid-cols-2 gap-4">
+                {summary.recipient.cryptoAddress && (
+                  <Info
+                    label="Destination address"
+                    value={
+                      <Copyable
+                        text={summary.recipient.cryptoAddress}
+                        display={maskAddr(
+                          summary.recipient.cryptoAddress
+                        )}
+                      />
+                    }
+                  />
+                )}
+                {summary.recipient.network && (
+                  <Info
+                    label="Network"
+                    value={summary.recipient.network}
+                  />
+                )}
+              </div>
+            )}
 
           <div className="mt-6 text-sm text-white/70 flex items-start gap-2">
             <ShieldQuestion size={16} className="mt-0.5" />
             <span>
-              Some transfers may require additional checks. If more information is needed, we’ll reach out.
-              You can close this page—your transfer will continue processing.
+              Some transfers may require additional checks. If more
+              information is needed, we’ll reach out. You can close
+              this page—your transfer will continue processing.
             </span>
           </div>
 
@@ -556,7 +770,9 @@ function Info({ label, value }: { label: string; value?: ReactNode }) {
   return (
     <div className="rounded-2xl border border-white/15 bg-white/5 p-4">
       <div className="text-xs text-white/60">{label}</div>
-      <div className="mt-1 text-base font-medium break-words">{value ?? "—"}</div>
+      <div className="mt-1 text-base font-medium break-words">
+        {value ?? "—"}
+      </div>
     </div>
   );
 }
@@ -569,9 +785,16 @@ function maskAddr(a?: string) {
 }
 
 function Copyable({ text, display }: { text: string; display?: string }) {
-  async function cp() { try { await navigator.clipboard.writeText(text); } catch {} }
+  async function cp() {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {}
+  }
   return (
-    <button onClick={cp} className="inline-flex items-center gap-2 hover:underline">
+    <button
+      onClick={cp}
+      className="inline-flex items-center gap-2 hover:underline"
+    >
       <span className="font-mono">{display || text}</span>
       <Copy className="h-3.5 w-3.5 opacity-70" />
     </button>

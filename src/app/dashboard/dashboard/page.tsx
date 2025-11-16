@@ -630,8 +630,7 @@ export default function DashboardPage() {
             setActivities(
               list.sort(
                 (a, b) =>
-                  new Date(b.createdAt || 0).getTime() -
-                  new Date(a.createdAt || 0).getTime()
+                  new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
               )
             );
           }
@@ -694,6 +693,77 @@ export default function DashboardPage() {
 
   const byMonth = useMemo(() => aggregateByMonth(txns), [txns]);
   const ytd = useMemo(() => aggregateYtd(txns), [txns]);
+
+  // 🔹 Monthly net trend for mini charts (last 6 months)
+  const monthlyTrend = useMemo(() => {
+    const points: { label: string; net: number; ts: number }[] = [];
+    byMonth.forEach((val, key) => {
+      const [yStr, mStr] = key.split("-");
+      const year = Number(yStr);
+      const month = Number(mStr);
+      const d = new Date(Date.UTC(year, month - 1, 1));
+      const label = d.toLocaleString(undefined, { month: "short" });
+      const net = +(val.received - val.sent).toFixed(2);
+      points.push({ label, net, ts: d.getTime() });
+    });
+    points.sort((a, b) => a.ts - b.ts);
+    return points.slice(-6).map(({ label, net }) => ({ label, net }));
+  }, [byMonth]);
+
+  // 🔹 Category breakdown (absolute volumes)
+  const categorySummary = useMemo(() => {
+    const map = new Map<string, number>();
+    txns.forEach((t) => {
+      const cat = (t.category || "Other").trim();
+      const vol = Math.abs(t.amount);
+      if (!vol) return;
+      map.set(cat, (map.get(cat) || 0) + vol);
+    });
+    const arr: { category: string; total: number }[] = [];
+    map.forEach((total, category) => {
+      arr.push({ category, total: +total.toFixed(2) });
+    });
+    arr.sort((a, b) => b.total - a.total);
+    return arr;
+  }, [txns]);
+
+  // 🔹 Rail split (PayPal / Zelle / ACH etc)
+  const railSummary = useMemo(() => {
+    const map = new Map<string, { sent: number; received: number }>();
+    txns.forEach((t) => {
+      const key = prettyRail(t.rail) ?? "Other";
+      const cur = map.get(key) || { sent: 0, received: 0 };
+      if (t.amount < 0) cur.sent += Math.abs(t.amount);
+      else cur.received += t.amount;
+      map.set(key, cur);
+    });
+    const arr: {
+      rail: string;
+      total: number;
+      sent: number;
+      received: number;
+    }[] = [];
+    map.forEach((v, rail) => {
+      const total = v.sent + v.received;
+      arr.push({
+        rail,
+        total: +total.toFixed(2),
+        sent: +v.sent.toFixed(2),
+        received: +v.received.toFixed(2),
+      });
+    });
+    arr.sort((a, b) => b.total - a.total);
+    return arr;
+  }, [txns]);
+
+  const totalCategoryVolume = useMemo(
+    () => categorySummary.reduce((sum, c) => sum + c.total, 0),
+    [categorySummary]
+  );
+  const totalRailVolume = useMemo(
+    () => railSummary.reduce((sum, r) => sum + r.total, 0),
+    [railSummary]
+  );
 
   const monthSentRecv = useMemo(() => {
     const k = toMonthKey(focusMonth);
@@ -839,6 +909,8 @@ export default function DashboardPage() {
     router.push(`/Transfer/success?${params.toString()}`);
   }
 
+  const visualCardLast4 = last4FromCard(cardNumber, cardLast4);
+
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
       <Nav
@@ -920,7 +992,7 @@ export default function DashboardPage() {
               balance={checkingBalance}
               color="#00E0FF"
               icon={<Wallet size={24} />}
-              subtitle={`Ending in ${cardLast4 || "••••"}`}
+              subtitle="Everyday spending account"
               onClick={openCardsManager}
             />
             <AccountCard
@@ -928,7 +1000,7 @@ export default function DashboardPage() {
               balance={savingsBalance}
               color="#33D69F"
               icon={<PiggyBank size={24} />}
-              subtitle="4.5% APY" // Placeholder APY; fetch if available
+              subtitle="4.5% APY"
               onClick={openCardsManager}
             />
             <CryptoCard
@@ -972,7 +1044,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Enhanced Insights - Cleaner stats, added trend icons, placeholder for mini chart */}
+      {/* Enhanced Insights - Cleaner stats, added trend icons, mini chart powered by txns */}
       <section className="container-x mt-10">
         <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl ring-1 ring-white/5">
           <div className="flex items-center justify-between mb-6">
@@ -1031,13 +1103,17 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* Placeholder mini chart */}
+          {/* Mini chart using monthly net trend */}
           <div className="mt-6 pt-4 border-t border-white/10">
-            <div className="text-sm text-white/70 mb-2">Monthly Trend</div>
-            <div className="h-20 flex items-center justify-center text-white/50 text-xs">
-              {/* Icon removed from imports; simple placeholder text here */}
-              Interactive chart coming soon
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-white/70">Monthly trend</div>
+              {monthlyTrend.length > 0 && (
+                <div className="text-[11px] text-white/50">
+                  Last {monthlyTrend.length} months • Net flow
+                </div>
+              )}
             </div>
+            <MiniTrendChart points={monthlyTrend} />
           </div>
         </div>
       </section>
@@ -1080,7 +1156,7 @@ export default function DashboardPage() {
       </button>
 
       {/* ----------------------------- MODALS ----------------------------- */}
-      {/* Modals remain unchanged as per instructions */}
+
       <Sheet
         open={showAccounts}
         onClose={() => setShowAccounts(false)}
@@ -1105,28 +1181,35 @@ export default function DashboardPage() {
 
           <div className="h-px bg-white/20 my-3" />
 
-          <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-5">
-            <div className="text-base font-semibold mb-3">
-              Account details
+          {/* Virtual card + account numbers */}
+          <div className="grid lg:grid-cols-[minmax(0,1.4fr),minmax(0,1fr)] gap-4">
+            <VirtualCard
+              label="Horizon virtual card"
+              holder={userName}
+              last4={visualCardLast4}
+              network="Visa"
+            />
+            <div className="rounded-2xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+              <div className="text-xs uppercase tracking-wide text-white/60 mb-3">
+                Account details
+              </div>
+              <KeyVal
+                k="Routing number"
+                v={routingNumber || "—"}
+              />
+              <KeyVal
+                k="Account number"
+                v={maskAccount(accountNumber) || "—"}
+              />
+              <KeyVal
+                k="Virtual card"
+                v={
+                  visualCardLast4
+                    ? `•••• •••• •••• ${visualCardLast4}`
+                    : "—"
+                }
+              />
             </div>
-            <KeyVal
-              k="Routing number"
-              v={routingNumber || "—"}
-            />
-            <KeyVal
-              k="Account number"
-              v={maskAccount(accountNumber) || "—"}
-            />
-            <KeyVal
-              k="Virtual card"
-              v={
-                cardNumber
-                  ? maskCard(cardNumber)
-                  : cardLast4
-                  ? `•••• •••• •••• ${cardLast4}`
-                  : "—"
-              }
-            />
           </div>
 
           <div className="pt-2">
@@ -1177,26 +1260,103 @@ export default function DashboardPage() {
               <div className="text-base text-white/80 mb-3 font-semibold">
                 Top categories
               </div>
-              <ul className="space-y-3 text-base text-white/60">
-                <li>Transfer</li>
+              <ul className="space-y-3 text-sm text-white/70">
+                {categorySummary.slice(0, 4).length === 0 ? (
+                  <li className="text-xs text-white/50">
+                    No categorized spend yet.
+                  </li>
+                ) : (
+                  categorySummary.slice(0, 4).map((c) => {
+                    const pct =
+                      totalCategoryVolume > 0
+                        ? (c.total / totalCategoryVolume) * 100
+                        : 0;
+                    return (
+                      <li
+                        key={c.category}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-sm text-white/85">
+                            {c.category}
+                          </span>
+                          <span className="text-xs text-white/50">
+                            {fmtMoney(c.total)} • {pct.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="h-2 w-20 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#00E0FF]"
+                            style={{
+                              width: `${Math.max(10, Math.min(100, pct))}%`,
+                            }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
               </ul>
             </div>
           </div>
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">
+            <div className="text-base text-white/80 mb-2 font-semibold">
               Monthly trend
             </div>
-            <div className="text-white/60 text-sm">
-              Charts coming soon.
+            <p className="text-xs text-white/60">
+              Net inflows vs outflows across your recent months.
+            </p>
+            <div className="mt-4">
+              <MiniTrendChart points={monthlyTrend} height={120} />
             </div>
           </div>
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">
+            <div className="text-base text-white/80 mb-2 font-semibold">
               Rail split
             </div>
-            <div className="text-white/60 text-sm">
-              Breakdown by PayPal / Zelle / ACH coming soon.
-            </div>
+            <p className="text-xs text-white/60 mb-3">
+              How your volume is distributed across rails like ACH, Zelle,
+              PayPal and more.
+            </p>
+            {railSummary.slice(0, 5).length === 0 ? (
+              <div className="text-sm text-white/55">
+                No rail activity yet.
+              </div>
+            ) : (
+              <div className="space-y-3 text-sm text-white/80">
+                {railSummary.slice(0, 5).map((r) => {
+                  const pct =
+                    totalRailVolume > 0
+                      ? (r.total / totalRailVolume) * 100
+                      : 0;
+                  return (
+                    <div
+                      key={r.rail}
+                      className="space-y-1"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span>{r.rail}</span>
+                        <span className="text-white/55">
+                          {fmtMoney(r.total)} • {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                        <div
+                          className="h-full bg-[#00E0FF]"
+                          style={{
+                            width: `${Math.max(10, Math.min(100, pct))}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-white/45">
+                        <span>Sent: {fmtMoney(r.sent)}</span>
+                        <span>Received: {fmtMoney(r.received)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </Sheet>
@@ -1251,7 +1411,7 @@ export default function DashboardPage() {
                 {/* Upload button / spinner */}
                 <button
                   onClick={avatarUploading ? undefined : handlePickAvatar}
-                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
+                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg.white/15 bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
                   title={avatarUploading ? "Uploading…" : "Change photo"}
                 >
                   {avatarUploading ? (
@@ -1431,7 +1591,7 @@ function AccountCard({
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
+      className="text-left rounded-3xl border border.white/10 border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
         <div
@@ -1440,14 +1600,18 @@ function AccountCard({
         >
           {icon}
         </div>
-        {label}
+        <div className="flex flex-col">
+          <span>{label}</span>
+          {subtitle && (
+            <span className="text-[11px] text-white/50 mt-0.5">
+              {subtitle}
+            </span>
+          )}
+        </div>
       </div>
       <div className="text-3xl font-bold mt-4">
         ${balance.toLocaleString()}
       </div>
-      {subtitle && (
-        <div className="text-xs text-white/50 mt-2">{subtitle}</div>
-      )}
     </button>
   );
 }
@@ -2031,6 +2195,170 @@ function NotificationsPanel({ activities }: { activities: any[] }) {
   );
 }
 
+/* ------------------------------- Virtual Card ------------------------------- */
+
+function VirtualCard({
+  label,
+  holder,
+  last4,
+  network,
+}: {
+  label: string;
+  holder?: string;
+  last4?: string;
+  network?: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-white/20 bg-gradient-to-br from-[#101826] via-[#0B1924] to-[#05070B] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.6)]">
+      <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[#00E0FF]/15 blur-3xl" />
+      <div className="absolute -left-16 bottom-0 h-32 w-32 rounded-full bg-[#33D69F]/10 blur-3xl" />
+      <div className="flex items-center justify-between text-xs text-white/70 relative">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-6 w-6 rounded-full bg-white/15 grid place-items-center border border-white/30">
+            <CreditCard size={12} />
+          </span>
+          {label}
+        </span>
+        <span className="uppercase tracking-[0.2em] text-[10px] text-white/60">
+          Virtual
+        </span>
+      </div>
+
+      <div className="mt-6 flex items-center gap-3 relative">
+        <div className="h-8 w-12 rounded-md bg-white/80 opacity-80" />
+        <div className="flex-1 space-y-1">
+          <div className="text-[11px] text-white/50">Card number</div>
+          <div className="font-mono tracking-[0.25em] text-sm">
+            {last4
+              ? `•••• •••• •••• ${last4}`
+              : "•••• •••• •••• ••••"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 flex items-end justify-between text-xs relative">
+        <div className="space-y-1">
+          <div className="text-white/50 text-[11px]">Card holder</div>
+          <div className="text-sm font-semibold">
+            {holder || "Horizon User"}
+          </div>
+        </div>
+        <div className="space-y-1 text-right">
+          <div className="text-white/50 text-[11px]">Expires</div>
+          <div className="font-mono text-sm tracking-[0.2em]">
+            12/28
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-white/60 uppercase">
+            {network || "Visa"}
+          </div>
+          <div className="text-lg font-semibold tracking-[0.15em]">
+            VISA
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ Mini Trend Chart ----------------------------- */
+
+function MiniTrendChart({
+  points,
+  height = 80,
+}: {
+  points: { label: string; net: number }[];
+  height?: number;
+}) {
+  if (!points || points.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center text-[11px] text-white/45 rounded-2xl bg-white/[0.02] border border-white/10"
+        style={{ height }}
+      >
+        Not enough history yet
+      </div>
+    );
+  }
+
+  const width = 100;
+  const h = 40;
+  const padX = 4;
+  const padY = 4;
+
+  const values = points.map((p) => p.net);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+
+  const xs = points.map((_, i) =>
+    points.length === 1
+      ? width / 2
+      : padX +
+        ((width - padX * 2) * i) / (points.length - 1)
+  );
+  const ys = points.map((v, i) => {
+    const normalized = (v - min) / span;
+    return padY + (h - padY * 2) * (1 - normalized);
+  });
+
+  const lineD = points
+    .map((_, i) => `${i === 0 ? "M" : "L"} ${xs[i]} ${ys[i]}`)
+    .join(" ");
+
+  const areaD =
+    `M ${xs[0]} ${h - padY} ` +
+    points
+      .map((_, i) => `L ${xs[i]} ${ys[i]}`)
+      .join(" ") +
+    ` L ${xs[xs.length - 1]} ${h - padY} Z`;
+
+  return (
+    <div className="w-full" style={{ height }}>
+      <svg
+        viewBox={`0 0 ${width} ${h}`}
+        className="w-full h-[70%]"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#00E0FF" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#00E0FF" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaD} fill="url(#trendFill)" opacity="0.7" />
+        <path
+          d={lineD}
+          fill="none"
+          stroke="#00E0FF"
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+        {xs.map((x, i) => (
+          <circle
+            key={i}
+            cx={x}
+            cy={ys[i]}
+            r={1.5}
+            fill="#00E0FF"
+          />
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between gap-1 text-[10px] text-white/50">
+        {points.map((p, i) => (
+          <span
+            key={`${p.label}-${i}`}
+            className="truncate"
+          >
+            {p.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------------- Utilities -------------------------------- */
 function maskAccount(acct?: string) {
   if (!acct) return "";
@@ -2044,4 +2372,12 @@ function maskCard(card?: string) {
   if (!digits) return card;
   const groups = digits.padStart(16, "•").match(/.{1,4}/g);
   return (groups || []).join(" ");
+}
+
+function last4FromCard(card?: string, fallback?: string) {
+  if (fallback) return fallback;
+  if (!card) return "";
+  const digits = card.replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.slice(-4);
 }
