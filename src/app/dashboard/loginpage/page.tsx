@@ -14,6 +14,7 @@ import {
   KeyRound,
   Timer,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import Logo from "@/components/logo";
 import { Button, Input, Label } from "@/components/primitives";
@@ -50,6 +51,8 @@ export default function LoginPage() {
   const [pin, setPin] = useState("");
   const [quickError, setQuickError] = useState("");
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [fingerprintLoading, setFingerprintLoading] = useState(false);
 
   // OTP modal (post-password step)
   const [otpOpen, setOtpOpen] = useState(false);
@@ -93,7 +96,8 @@ export default function LoginPage() {
 
       // optional UX hints
       try {
-        if (res?.flags?.hb_passkey) localStorage.setItem("hb_passkey", res.flags.hb_passkey);
+        if (res?.flags?.hb_passkey)
+          localStorage.setItem("hb_passkey", res.flags.hb_passkey);
         localStorage.setItem("hb_logged_in", "1");
       } catch {}
 
@@ -125,7 +129,7 @@ export default function LoginPage() {
   async function verifyOtpNow() {
     setOtpError("");
     const code = otp.join("");
-       if (code.length !== 6) {
+    if (code.length !== 6) {
       setOtpError("Enter the 6-digit code.");
       return;
     }
@@ -146,7 +150,9 @@ export default function LoginPage() {
         (user?.setupPercent ?? 0) >= 100 ||
         !!user?.hasPin;
 
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      router.replace(
+        isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING
+      );
     } catch (e: any) {
       setOtpError(e?.message || "Verification failed.");
     } finally {
@@ -158,6 +164,7 @@ export default function LoginPage() {
   /* ------------------------------- Quick Login ----------------------------- */
   async function handlePinLogin() {
     setQuickError("");
+    setPinLoading(true);
     try {
       // Use API wrapper (sets cookies with credentials)
       await API.pinLogin(pinEmail, pin);
@@ -169,14 +176,19 @@ export default function LoginPage() {
         (user?.setupPercent ?? 0) >= 100 ||
         !!user?.hasPin;
 
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      router.replace(
+        isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING
+      );
     } catch (e: any) {
       setQuickError(e?.message || "Incorrect PIN or email.");
+    } finally {
+      setPinLoading(false);
     }
   }
 
   async function handleFingerprintLogin() {
     setQuickError("");
+    setFingerprintLoading(true);
     try {
       // Ask server for WebAuthn assertion options
       const optRes = await fetch(`${BASE}/webauthn/assertion/options`, {
@@ -187,7 +199,8 @@ export default function LoginPage() {
         credentials: "include",
       });
       const options = await optRes.json().catch(() => ({}));
-      if (!optRes.ok) throw new Error(options?.error || "Unable to start fingerprint login.");
+      if (!optRes.ok)
+        throw new Error(options?.error || "Unable to start fingerprint login.");
 
       // Convert options to proper types
       const publicKey: PublicKeyCredentialRequestOptions = {
@@ -200,7 +213,9 @@ export default function LoginPage() {
       };
 
       // WebAuthn get()
-      const assertion = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential;
+      const assertion = (await navigator.credentials.get({
+        publicKey,
+      })) as PublicKeyCredential;
       if (!assertion) throw new Error("Authentication cancelled.");
 
       // Send result for verification; server should set cookies on success
@@ -212,7 +227,8 @@ export default function LoginPage() {
         credentials: "include",
       });
       const result = await resultRes.json().catch(() => ({}));
-      if (!resultRes.ok) throw new Error(result?.error || "Fingerprint login failed.");
+      if (!resultRes.ok)
+        throw new Error(result?.error || "Fingerprint login failed.");
 
       // Route from server truth
       const user = await API.meUser();
@@ -221,12 +237,16 @@ export default function LoginPage() {
         (user?.setupPercent ?? 0) >= 100 ||
         !!user?.hasPin;
 
-      router.replace(isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING);
+      router.replace(
+        isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING
+      );
     } catch (e: any) {
       setQuickError(
         e?.message ||
           "Fingerprint login failed. If this device isn’t enrolled yet, enable it in onboarding."
       );
+    } finally {
+      setFingerprintLoading(false);
     }
   }
 
@@ -238,7 +258,9 @@ export default function LoginPage() {
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Logo />
-            <span className="hidden sm:inline text-sm text-[#9BB0C6]">Login</span>
+            <span className="hidden sm:inline text-sm text-[#9BB0C6]">
+              Login
+            </span>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#9BB0C6]">
             <ShieldCheck className="h-4 w-4" />
@@ -253,26 +275,45 @@ export default function LoginPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="w-full max-w-md rounded-2xl border border-white/10 bg-[#101826] p-8 shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+          className="w-full max-w-md rounded-2xl border border-white/10 bg-[#101826] p-8 shadow-[0_10px_30px_rgba(0,0,0,0.45)] relative"
         >
+          {/* Subtle loading veil when quick auth is in progress */}
+          {(pinLoading || fingerprintLoading) && (
+            <div className="absolute inset-0 rounded-2xl bg-black/30 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 z-10">
+              <Loader2 className="h-6 w-6 animate-spin text-[#00E0FF]" />
+              <p className="text-[11px] text-[#C8D6EA] flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Securely verifying your device…
+              </p>
+            </div>
+          )}
+
           <h1 className="text-2xl font-semibold mb-1">Welcome back</h1>
-          <p className="text-sm text-[#9BB0C6] mb-6">Sign in to your Horizon account</p>
+          <p className="text-sm text-[#9BB0C6] mb-6">
+            Sign in to your Horizon account
+          </p>
 
           {/* Toggle */}
           <div className="flex justify-center gap-2 mb-5">
             <button
               className={`px-3 py-1 rounded-full text-xs ${
-                !usePin ? "bg-[#00B4D8]/20 text-[#00E0FF]" : "bg-white/5 text-[#9BB0C6]"
+                !usePin
+                  ? "bg-[#00B4D8]/20 text-[#00E0FF]"
+                  : "bg-white/5 text-[#9BB0C6]"
               }`}
               onClick={() => setUsePin(false)}
+              disabled={pinLoading || fingerprintLoading}
             >
               Email Login
             </button>
             <button
               className={`px-3 py-1 rounded-full text-xs ${
-                usePin ? "bg[#00B4D8]/20 text-[#00E0FF]" : "bg-white/5 text-[#9BB0C6]"
-              }`.replace("bg[#00B4D8]", "bg-[#00B4D8]")}
+                usePin
+                  ? "bg-[#00B4D8]/20 text-[#00E0FF]"
+                  : "bg-white/5 text-[#9BB0C6]"
+              }`}
               onClick={() => setUsePin(true)}
+              disabled={pinLoading || fingerprintLoading}
             >
               Quick Login
             </button>
@@ -292,6 +333,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="bg-white/5 border-white/10"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -307,13 +349,19 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="pr-10 bg-white/5 border-white/10"
+                      disabled={loading}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPw(!showPw)}
                       className="absolute right-2 text-[#9BB0C6] hover:text-[#E6EEF7]"
+                      disabled={loading}
                     >
-                      {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPw ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
 
@@ -324,11 +372,14 @@ export default function LoginPage() {
                       onClick={() =>
                         router.push(
                           `${PATHS.DASHBOARD_FORGOT_PASSWORD}${
-                            email ? `?email=${encodeURIComponent(email)}` : ""
+                            email
+                              ? `?email=${encodeURIComponent(email)}`
+                              : ""
                           }`
                         )
                       }
                       className="text-[11px] text-[#00E0FF] hover:underline"
+                      disabled={loading}
                     >
                       Forgot your password?
                     </button>
@@ -347,8 +398,17 @@ export default function LoginPage() {
                   boxShadow: "0 8px 24px rgba(0,180,216,.35)",
                 }}
               >
-                {loading ? "Signing in..." : "Sign in"}
-                <LogIn className="h-4 w-4" />
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Signing in…</span>
+                  </>
+                ) : (
+                  <>
+                    Sign in
+                    <LogIn className="h-4 w-4" />
+                  </>
+                )}
               </Button>
 
               <p className="text-xs text-center text-[#9BB0C6] mt-4">
@@ -356,6 +416,7 @@ export default function LoginPage() {
                 <button
                   className="text-[#00E0FF] hover:underline"
                   onClick={() => router.push(PATHS.CREATE_ACCOUNT)}
+                  disabled={loading}
                 >
                   Create one
                 </button>
@@ -377,6 +438,7 @@ export default function LoginPage() {
                     value={pinEmail}
                     onChange={(e) => setPinEmail(e.target.value)}
                     className="bg-white/5 border-white/10"
+                    disabled={pinLoading || fingerprintLoading}
                   />
                 </div>
               </div>
@@ -395,41 +457,78 @@ export default function LoginPage() {
                       setPin(e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
                     className="pl-10 text-center tracking-[.4em] bg-white/5 border-white/10"
+                    disabled={pinLoading || fingerprintLoading}
                   />
                 </div>
               </div>
 
               {quickError && (
-                <div className="text-rose-400 text-xs text-center">{quickError}</div>
+                <div className="text-rose-400 text-xs text-center">
+                  {quickError}
+                </div>
               )}
 
               <Button
                 onClick={handlePinLogin}
-                disabled={!canPinLogin}
-                className="mt-1 w-full justify-center text-[#0E131B]"
+                disabled={
+                  !canPinLogin || pinLoading || fingerprintLoading
+                }
+                className="mt-1 w-full justify-center text-[#0E131B] relative overflow-hidden"
                 style={{
                   backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)",
                   boxShadow: "0 8px 24px rgba(0,180,216,.35)",
                 }}
               >
-                Unlock
-                <Lock className="h-4 w-4 ml-1" />
+                {pinLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Unlocking…</span>
+                  </span>
+                ) : (
+                  <>
+                    Unlock
+                    <Lock className="h-4 w-4 ml-1" />
+                  </>
+                )}
               </Button>
+
+              {pinLoading && (
+                <p className="text-[11px] text-center text-[#9BB0C6] mt-1 flex items-center justify-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Verifying your PIN securely…
+                </p>
+              )}
 
               <button
                 onClick={handleFingerprintLogin}
                 className={`mt-2 flex items-center justify-center gap-2 text-sm ${
-                  biometricEnabled ? "text-[#00B4D8] hover:text-white" : "text-[#9BB0C6]"
+                  biometricEnabled
+                    ? "text-[#00B4D8] hover:text-white"
+                    : "text-[#9BB0C6]"
                 }`}
-                disabled={!biometricEnabled || !pinEmail}
+                disabled={
+                  !biometricEnabled ||
+                  !pinEmail ||
+                  fingerprintLoading ||
+                  pinLoading
+                }
                 title={
                   biometricEnabled
                     ? "Authenticate with fingerprint"
                     : "Fingerprint not set up yet — enable it during onboarding."
                 }
               >
-                <Fingerprint className="h-5 w-5" />
-                Use Fingerprint
+                {fingerprintLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Authenticating…</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="h-5 w-5" />
+                    Use Fingerprint
+                  </>
+                )}
               </button>
             </div>
           )}
