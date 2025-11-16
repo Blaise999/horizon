@@ -1411,7 +1411,7 @@ export default function DashboardPage() {
                 {/* Upload button / spinner */}
                 <button
                   onClick={avatarUploading ? undefined : handlePickAvatar}
-                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg.white/15 bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
+                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
                   title={avatarUploading ? "Uploading…" : "Change photo"}
                 >
                   {avatarUploading ? (
@@ -1591,7 +1591,7 @@ function AccountCard({
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-3xl border border.white/10 border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
+      className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
         <div
@@ -2044,7 +2044,7 @@ function TransactionsPanel({
         />
       </div>
 
-      <div className="md:sticky md:top:[64px] z-[5] -mx-6 px-6 py-4 bg-[#0F1622]/95 backdrop-blur-md border-y border-white/20 shadow-md">
+      <div className="md:sticky md:top-[64px] z-[5] -mx-6 px-6 py-4 bg-[#0F1622]/95 backdrop-blur-md border-y border-white/20 shadow-md">
         <div className="flex items-center justify-center">
           <TabPills current={tab} onChange={setTab} />
         </div>
@@ -2287,29 +2287,31 @@ function MiniTrendChart({
   const padX = 4;
   const padY = 4;
 
+  // pull out just the numeric values once
   const values = points.map((p) => p.net);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
 
-  const xs = points.map((_, i) =>
-    points.length === 1
+  const xs = values.map((_, i) =>
+    values.length === 1
       ? width / 2
-      : padX +
-        ((width - padX * 2) * i) / (points.length - 1)
+      : padX + ((width - padX * 2) * i) / (values.length - 1)
   );
-  const ys = points.map((v, i) => {
+
+  // 🔧 FIX: map over numeric `values`, not `{label, net}` points
+  const ys = values.map((v) => {
     const normalized = (v - min) / span;
     return padY + (h - padY * 2) * (1 - normalized);
   });
 
-  const lineD = points
+  const lineD = values
     .map((_, i) => `${i === 0 ? "M" : "L"} ${xs[i]} ${ys[i]}`)
     .join(" ");
 
   const areaD =
     `M ${xs[0]} ${h - padY} ` +
-    points
+    values
       .map((_, i) => `L ${xs[i]} ${ys[i]}`)
       .join(" ") +
     ` L ${xs[xs.length - 1]} ${h - padY} Z`;
@@ -2336,21 +2338,12 @@ function MiniTrendChart({
           strokeLinecap="round"
         />
         {xs.map((x, i) => (
-          <circle
-            key={i}
-            cx={x}
-            cy={ys[i]}
-            r={1.5}
-            fill="#00E0FF"
-          />
+          <circle key={i} cx={x} cy={ys[i]} r={1.5} fill="#00E0FF" />
         ))}
       </svg>
       <div className="mt-1 flex justify-between gap-1 text-[10px] text-white/50">
         {points.map((p, i) => (
-          <span
-            key={`${p.label}-${i}`}
-            className="truncate"
-          >
+          <span key={`${p.label}-${i}`} className="truncate">
             {p.label}
           </span>
         ))}
@@ -2358,6 +2351,7 @@ function MiniTrendChart({
     </div>
   );
 }
+
 
 /* -------------------------------- Utilities -------------------------------- */
 function maskAccount(acct?: string) {
