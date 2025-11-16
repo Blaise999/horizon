@@ -251,8 +251,6 @@ function mapServerToSummary(src: any): PendingSummary {
       ? asNumber(src.amountCrypto)
       : undefined;
 
-  // Backend shape you showed: src.recipient already exists; for crypto you’ll
-  // extend it with cryptoAddress + network. We still fall back to other fields.
   const cryptoAddress = firstTruthy(
     src?.recipient?.cryptoAddress,
     src?.recipient?.address,
@@ -329,7 +327,8 @@ function mapServerToSummary(src: any): PendingSummary {
       undefined,
   };
 
-  const recBase = src?.recipient || transfer?.recipient || payload.recipient || {};
+  const recBase =
+    src?.recipient || transfer?.recipient || payload.recipient || {};
   const recipient = {
     name: firstTruthy(
       recBase.name,
@@ -637,35 +636,56 @@ export default function Pending() {
         })
       : "—";
 
-  // 🔹 Amount display: for crypto rails try "0.000xx BTC • $56.14"
+  const fmtCrypto = (n?: number) =>
+    typeof n === "number"
+      ? n.toLocaleString(undefined, {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 8,
+        })
+      : "";
+
+  // 🔹 Amount display: for crypto rails show crypto units; only add fiat if > 0
   const amountDisplay = useMemo(() => {
     if (!summary) return "—";
-
-    const fiat = fmtMoney(
-      summary.amount?.value,
-      summary.amount?.currency || "USD"
-    );
 
     const isCryptoRail =
       summary.type === "crypto" ||
       (summary.railRaw &&
         String(summary.railRaw).toLowerCase().startsWith("crypto"));
 
+    const hasFiat =
+      typeof summary.amount?.value === "number" &&
+      summary.amount.value !== 0;
+
+    const fiat = hasFiat
+      ? fmtMoney(
+          summary.amount.value,
+          summary.amount.currency || "USD"
+        )
+      : null;
+
     if (
       isCryptoRail &&
       typeof summary.cryptoAmount === "number" &&
       summary.cryptoSymbol
     ) {
-      return `${summary.cryptoAmount} ${summary.cryptoSymbol.toUpperCase()} • ${fiat}`;
+      const cryptoPart = `${fmtCrypto(
+        summary.cryptoAmount
+      )} ${summary.cryptoSymbol.toUpperCase()}`;
+      return fiat ? `${cryptoPart} • ${fiat}` : cryptoPart;
     }
 
-    return fiat;
+    // non-crypto rails → just fiat
+    return fmtMoney(
+      summary.amount?.value,
+      summary.amount?.currency || "USD"
+    );
   }, [summary]);
 
   const recipientPretty = useMemo(() => {
     if (!summary?.recipient) return "Recipient";
 
-    // For crypto rails prefer address/network in the label
+    // For crypto rails prefer address in the label
     const isCryptoRail =
       summary.type === "crypto" ||
       (summary.railRaw &&
