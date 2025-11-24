@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -34,6 +34,7 @@ import { registerThisDevice } from "@/libs/fp";
 /* -------------------------------------------------------------------------- */
 
 const BASE = API_BASE || "/api"; // used only for WebAuthn helpers here
+const OTP_LEN = 6;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -61,6 +62,9 @@ export default function LoginPage() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+
+  // ✅ refs for OTP inputs so we can auto-advance/focus
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   // Seed passkey flag from local cache (UX only; server is source of truth)
   useEffect(() => {
@@ -104,6 +108,9 @@ export default function LoginPage() {
       // 2) Force OTP step
       setOtpOpen(true);
       await sendOtpNow(email);
+
+      // focus first OTP input after modal opens
+      setTimeout(() => otpRefs.current[0]?.focus(), 0);
     } catch (e: any) {
       setErr(e?.message || "Login failed.");
       setLoading(false);
@@ -112,7 +119,7 @@ export default function LoginPage() {
 
   async function sendOtpNow(addr: string) {
     setOtpError("");
-    setOtp(["", "", "", "", "", ""]);
+    setOtp(Array(OTP_LEN).fill(""));
     setOtpSending(true);
     try {
       await API.sendOtp(addr);
@@ -129,7 +136,7 @@ export default function LoginPage() {
   async function verifyOtpNow() {
     setOtpError("");
     const code = otp.join("");
-    if (code.length !== 6) {
+    if (code.length !== OTP_LEN) {
       setOtpError("Enter the 6-digit code.");
       return;
     }
@@ -159,6 +166,75 @@ export default function LoginPage() {
       setOtpVerifying(false);
       setLoading(false);
     }
+  }
+
+  /* ------------------------------ OTP handlers ----------------------------- */
+  function handleOtpChange(i: number, val: string) {
+    const clean = val.replace(/\D/g, "").slice(0, 1);
+    const next = [...otp];
+    next[i] = clean;
+    setOtp(next);
+
+    // ✅ auto-advance when a digit is entered
+    if (clean && i < OTP_LEN - 1) {
+      otpRefs.current[i + 1]?.focus();
+      otpRefs.current[i + 1]?.select?.();
+    }
+  }
+
+  function handleOtpKeyDown(i: number, e: any) {
+    const key = e.key;
+
+    if (key === "Backspace") {
+      // if current box has value, clear it
+      if (otp[i]) {
+        const next = [...otp];
+        next[i] = "";
+        setOtp(next);
+      } else if (i > 0) {
+        // move back if empty
+        otpRefs.current[i - 1]?.focus();
+        const next = [...otp];
+        next[i - 1] = "";
+        setOtp(next);
+      }
+      e.preventDefault();
+      return;
+    }
+
+    if (key === "ArrowLeft" && i > 0) {
+      otpRefs.current[i - 1]?.focus();
+      e.preventDefault();
+      return;
+    }
+
+    if (key === "ArrowRight" && i < OTP_LEN - 1) {
+      otpRefs.current[i + 1]?.focus();
+      e.preventDefault();
+      return;
+    }
+
+    // allow typing only digits
+    if (key.length === 1 && /\D/.test(key)) {
+      e.preventDefault();
+    }
+  }
+
+  function handleOtpPaste(e: any) {
+    const text = e.clipboardData?.getData("text") || "";
+    const digits = text.replace(/\D/g, "").slice(0, OTP_LEN);
+    if (!digits) return;
+
+    e.preventDefault();
+    const arr = digits.split("");
+    const filled = Array(OTP_LEN)
+      .fill("")
+      .map((_, idx) => arr[idx] || "");
+
+    setOtp(filled);
+
+    const lastIdx = Math.min(digits.length, OTP_LEN) - 1;
+    otpRefs.current[lastIdx]?.focus();
   }
 
   /* ------------------------------- Quick Login ----------------------------- */
@@ -470,9 +546,7 @@ export default function LoginPage() {
 
               <Button
                 onClick={handlePinLogin}
-                disabled={
-                  !canPinLogin || pinLoading || fingerprintLoading
-                }
+                disabled={!canPinLogin || pinLoading || fingerprintLoading}
                 className="mt-1 w-full justify-center text-[#0E131B] relative overflow-hidden"
                 style={{
                   backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)",
@@ -558,10 +632,12 @@ export default function LoginPage() {
                 <Input
                   key={i}
                   maxLength={1}
+                  inputMode="numeric"
                   value={v}
-                  onChange={(e) =>
-                    handleOtpChange(i, e.target.value, otp, setOtp)
-                  }
+                  ref={(el) => (otpRefs.current[i] = el)}
+                  onChange={(e) => handleOtpChange(i, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                  onPaste={handleOtpPaste}
                   className="w-10 h-12 text-center text-lg bg-white/5 border-white/10"
                 />
               ))}
@@ -616,18 +692,6 @@ export default function LoginPage() {
 }
 
 /* ------------------------------ Utilities ------------------------------ */
-
-function handleOtpChange(
-  i: number,
-  val: string,
-  otp: string[],
-  setOtp: (v: string[]) => void
-) {
-  const clean = val.replace(/\D/g, "").slice(0, 1);
-  const next = [...otp];
-  next[i] = clean;
-  setOtp(next);
-}
 
 function base64urlToBuffer(b64url: string) {
   const pad = (s: string) => s + "===".slice((s.length + 3) % 4);

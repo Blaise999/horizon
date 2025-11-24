@@ -556,6 +556,9 @@ function aggregateYtd(rows: TxnRowUnified[], ref = new Date()) {
 export default function DashboardPage() {
   const router = useRouter();
 
+  // ✅ Auth guard state (server-truth check before showing dashboard)
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [userName, setUserName] = useState<string>("");
   const [setupPercent, setSetupPercent] = useState<number>(0);
   const [checkingBalance, setCheckingBalance] = useState<number>(0);
@@ -611,10 +614,20 @@ export default function DashboardPage() {
   const openCrypto = () => router.push("/Transfer/crypto");
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
       try {
+        // ✅ SERVER TRUTH: if cookies/session invalid, this throws
         const meResp = await API.me();
         const { user, preferences: prefsTop } = meResp as any;
+
+        // hard verify we actually got a user
+        if (!user?.id && !user?._id && !user?.email) {
+          throw new Error("No session");
+        }
+
+        if (!alive) return;
 
         const name =
           (user.fullName && user.fullName.trim()) ||
@@ -727,11 +740,31 @@ export default function DashboardPage() {
         } catch {
           // ignore; empty notifications panel
         }
+
+        setAuthChecked(true);
       } catch {
+        if (!alive) return;
+        setAuthChecked(true);
         router.replace("/dashboard/loginpage");
       }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [router]);
+
+  // ✅ Block dashboard render until auth is confirmed
+  if (!authChecked) {
+    return (
+      <main className="min-h-svh bg-[#0E131B] text-white grid place-items-center">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin text-[#00E0FF]" />
+          <div className="text-sm text-white/60">Checking session…</div>
+        </div>
+      </main>
+    );
+  }
 
   const totalFiat = useMemo(
     () => checkingBalance + savingsBalance,
