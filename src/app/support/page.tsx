@@ -19,11 +19,14 @@ import {
   Search,
   SendHorizonal,
   FileText,
+  MessageSquareText,
+  CheckCircle2,
 } from "lucide-react";
 
 const SUPPORT_EMAIL = "Horizonbankhelpdesk@gmail.com";
 const SUPPORT_PHONE_DISPLAY = "+1 (763) 319-4582";
-const SUPPORT_PHONE_TEL = "+17633194582";
+const SUPPORT_PHONE_RAW = "+17633194582";
+const SUPPORT_WHATSAPP_LINK = "https://wa.me/17633194582"; // only clickable connector besides email
 
 type Topic =
   | "Deposits & Add Money"
@@ -90,6 +93,8 @@ export default function SupportPage() {
   const [message, setMessage] = useState("");
   const [refId, setRefId] = useState("");
   const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sentRef, setSentRef] = useState<string | null>(null);
 
   const filteredFaqs = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -107,28 +112,24 @@ export default function SupportPage() {
     if (!subject.trim() || !message.trim()) return;
 
     setSending(true);
+    setSent(false);
+
     try {
-      const bodyLines = [
-        `Topic: ${topic}`,
-        `Priority: ${priority}`,
-        refId.trim() ? `Reference ID: ${refId.trim()}` : null,
-        "",
-        message.trim(),
-        "",
-        "— Sent from Horizon Support page",
-      ].filter(Boolean);
+      // Fake send — no navigation, no API
+      await new Promise((r) => setTimeout(r, 1200));
 
-      const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
-        `[Horizon Support] ${subject.trim()}`
-      )}&body=${encodeURIComponent(bodyLines.join("\n"))}`;
+      const clientRef =
+        "HB-" + Math.random().toString(36).slice(2, 8).toUpperCase();
 
-      // Open user's email client
-      window.location.href = mailto;
+      setSent(true);
+      setSentRef(clientRef);
 
       // Soft reset for UX
       setSubject("");
       setMessage("");
       setRefId("");
+      setPriority("Normal");
+      setTopic("Deposits & Add Money");
     } finally {
       setSending(false);
     }
@@ -156,11 +157,22 @@ export default function SupportPage() {
               <div>
                 <h1 className="text-xl md:text-2xl font-semibold">Horizon Support</h1>
                 <p className="text-white/70 mt-1">
-                  We’re here to help. Browse quick fixes or message the Helpdesk.
+                  We’re here to help. Browse quick fixes or reach the Helpdesk.
                 </p>
               </div>
 
+              {/* Only clickable: WhatsApp + Email */}
               <div className="flex flex-wrap gap-2">
+                <a
+                  href={SUPPORT_WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/[0.06] px-4 py-2 text-sm hover:bg-white/[0.08]"
+                >
+                  <MessageSquareText className="h-4 w-4" />
+                  Chat on WhatsApp
+                </a>
+
                 <a
                   href={`mailto:${SUPPORT_EMAIL}`}
                   className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/[0.06] px-4 py-2 text-sm hover:bg-white/[0.08]"
@@ -168,35 +180,35 @@ export default function SupportPage() {
                   <Mail className="h-4 w-4" />
                   Email Helpdesk
                 </a>
-                <a
-                  href={`tel:${SUPPORT_PHONE_TEL}`}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/[0.06] px-4 py-2 text-sm hover:bg-white/[0.08]"
-                >
-                  <Phone className="h-4 w-4" />
-                  Call {SUPPORT_PHONE_DISPLAY}
-                </a>
               </div>
             </div>
 
-            {/* Quick actions */}
+            {/* Non-clickable phone display */}
+            <div className="mt-3 text-sm text-white/70 flex items-center gap-2">
+              <Phone className="h-4 w-4" />
+              Support line: <span className="text-white">{SUPPORT_PHONE_DISPLAY}</span>
+              <span className="text-xs text-white/50">(WhatsApp preferred)</span>
+            </div>
+
+            {/* Quick contact cards (only WA + email) */}
             <div className="mt-6 grid sm:grid-cols-3 gap-3">
-              <QuickCard
-                icon={<Landmark className="h-4 w-4" />}
-                title="Add money help"
-                text="ACH, card, wire deposits and pending approvals."
-                href="/dashboard/money/add"
+              <ContactCard
+                icon={<MessageSquareText className="h-4 w-4" />}
+                title="WhatsApp Helpdesk"
+                text="Fastest response for urgent issues."
+                href={SUPPORT_WHATSAPP_LINK}
               />
-              <QuickCard
+              <ContactCard
+                icon={<Mail className="h-4 w-4" />}
+                title="Email Support"
+                text="Best for detailed complaints."
+                href={`mailto:${SUPPORT_EMAIL}`}
+              />
+              <ContactCard
                 icon={<Clock3 className="h-4 w-4" />}
-                title="Pending transfers"
-                text="Track approvals and references."
-                href="/Transfer/pending"
-              />
-              <QuickCard
-                icon={<ShieldCheck className="h-4 w-4" />}
-                title="Security center"
-                text="Account protection and suspicious activity."
-                href="/dashboard/security"
+                title="Support hours"
+                text="24/7 monitoring for priority cases."
+                href={SUPPORT_WHATSAPP_LINK}
               />
             </div>
 
@@ -253,16 +265,30 @@ export default function SupportPage() {
               </div>
 
               <div className="mt-4 text-xs text-white/60">
-                Still stuck? Send a ticket and we’ll respond ASAP.
+                Still stuck? Use WhatsApp or email above.
               </div>
             </div>
 
-            {/* Ticket form */}
+            {/* Ticket form (fake submit) */}
             <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 md:p-6">
-              <h2 className="text-base font-semibold">Contact Helpdesk</h2>
+              <h2 className="text-base font-semibold">Submit a complaint</h2>
               <p className="text-sm text-white/70 mt-1">
-                Tell us what’s up. This opens your email app with a pre-filled message.
+                This form records your issue locally and shows “Complaint sent”.
+                For real support, use WhatsApp or email.
               </p>
+
+              {sent && (
+                <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-300 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-emerald-200 font-medium">Complaint sent</div>
+                    <div className="text-white/80 mt-1">
+                      Reference <span className="font-mono">{sentRef}</span>. 
+                      If you need faster help, message us on WhatsApp.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <form className="mt-4 grid gap-4" onSubmit={submitTicket}>
                 <FieldSelect
@@ -306,9 +332,18 @@ export default function SupportPage() {
 
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <div className="text-xs text-white/60">
-                    Or email directly:{" "}
+                    Helpdesk:{" "}
                     <a className="underline hover:text-white" href={`mailto:${SUPPORT_EMAIL}`}>
                       {SUPPORT_EMAIL}
+                    </a>{" "}
+                    • WhatsApp:{" "}
+                    <a
+                      className="underline hover:text-white"
+                      href={SUPPORT_WHATSAPP_LINK}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {SUPPORT_PHONE_RAW}
                     </a>
                   </div>
 
@@ -322,7 +357,7 @@ export default function SupportPage() {
                     }`}
                     style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
                   >
-                    {sending ? "Opening email…" : "Send to Helpdesk"}
+                    {sending ? "Sending…" : "Submit complaint"}
                   </button>
                 </div>
               </form>
@@ -331,7 +366,7 @@ export default function SupportPage() {
 
           {/* Footer-ish */}
           <div className="mt-8 text-center text-xs text-white/50">
-            © {new Date().getFullYear()} Horizon Bank • Support line available 24/7 for urgent issues.
+            © {new Date().getFullYear()} Horizon Bank • Support via WhatsApp or email.
           </div>
         </div>
       </section>
@@ -341,7 +376,7 @@ export default function SupportPage() {
 
 /* -------------------------------- UI blocks ------------------------------- */
 
-function QuickCard({
+function ContactCard({
   icon,
   title,
   text,
@@ -353,8 +388,10 @@ function QuickCard({
   href: string;
 }) {
   return (
-    <Link
+    <a
       href={href}
+      target={href.startsWith("http") ? "_blank" : undefined}
+      rel={href.startsWith("http") ? "noreferrer" : undefined}
       className="rounded-2xl border border-white/20 bg-white/[0.06] p-4 hover:bg-white/[0.08] transition"
     >
       <div className="flex items-start gap-3">
@@ -369,7 +406,7 @@ function QuickCard({
           <div className="text-xs text-white/70 mt-1">{text}</div>
         </div>
       </div>
-    </Link>
+    </a>
   );
 }
 
@@ -421,12 +458,26 @@ function FieldInput(props: {
   invalidMsg?: string;
   min?: string;
 }) {
-  const { label, value, onChange, placeholder, type = "text", icon, disabled, invalidMsg, min } = props;
+  const {
+    label,
+    value,
+    onChange,
+    placeholder,
+    type = "text",
+    icon,
+    disabled,
+    invalidMsg,
+    min,
+  } = props;
   return (
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <input
           type={type}
           value={value}
@@ -480,7 +531,11 @@ function FieldSelect(props: {
     <label className="text-sm grid gap-2">
       <span className="text-white/70">{label}</span>
       <div className="relative">
-        {icon && <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">{icon}</div>}
+        {icon && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 opacity-80">
+            {icon}
+          </div>
+        )}
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
