@@ -142,51 +142,58 @@ export function clearToken() {
 // - browser freezes/discards tab (freeze)
 // Idempotent install so multiple guards won't double-listen.
 //
-let __autoClearInstalled = false;
-
-export function installSessionTokenAutoClear() {
+/**
+ * Auto-logout when tab/page is closed or put in background.
+ * - Clears bearer immediately
+ * - Best-effort server logout to clear httpOnly cookies
+ */
+export function installAutoLogoutOnClose() {
   if (typeof window === "undefined") return () => {};
 
-  if (__autoClearInstalled) {
-    return () => {}; // already installed
-  }
-  __autoClearInstalled = true;
+  const logoutUrl = joinApi("/auth/logout");
 
-  const kill = () => clearToken();
+  const kill = () => {
+    // 1) kill bearer right now
+    clearToken();
 
-  try {
-    // extra safety: nuke any legacy persisted token on install
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {}
+    // 2) best-effort cookie logout
+    try {
+      if ("sendBeacon" in navigator) {
+        const blob = new Blob([], { type: "application/json" });
+        navigator.sendBeacon(logoutUrl, blob);
+      } else {
+        fetch(logoutUrl, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true, // important for unload
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }).catch(() => {});
+      }
+    } catch {}
+  };
 
-  // Best overall “goodbye” event (close/reload/nav/BFCache)
-  window.addEventListener("pagehide", kill, { capture: true });
+  // fires on tab close, reload, navigate away
+  window.addEventListener("pagehide", kill);
+  window.addEventListener("beforeunload", kill);
 
-  // Still useful on many desktops
-  window.addEventListener("beforeunload", kill, { capture: true });
+  // extra safety: backgrounding on mobile often skips beforeunload
+  const onVis = () => {
+    if (document.visibilityState === "hidden") kill();
+  };
+  document.addEventListener("visibilitychange", onVis);
 
-  // Mobile/Safari: when tab/app goes background
-  document.addEventListener(
-    "visibilitychange",
-    () => {
-      if (document.visibilityState === "hidden") kill();
-    },
-    { capture: true }
-  );
-
-  // Chrome/Edge page lifecycle: discard/freeze
-  (document as any).addEventListener?.("freeze", kill, { capture: true });
+  // BFCache restore (back/forward cache) can resurrect state
+  const onShow = (e: PageTransitionEvent) => {
+    if (e.persisted) clearToken();
+  };
+  window.addEventListener("pageshow", onShow);
 
   return () => {
-    __autoClearInstalled = false;
-    window.removeEventListener("pagehide", kill, { capture: true } as any);
-    window.removeEventListener("beforeunload", kill, { capture: true } as any);
-    document.removeEventListener(
-      "visibilitychange",
-      kill as any,
-      { capture: true } as any
-    );
-    (document as any).removeEventListener?.("freeze", kill, { capture: true });
+    window.removeEventListener("pagehide", kill);
+    window.removeEventListener("beforeunload", kill);
+    document.removeEventListener("visibilitychange", onVis);
+    window.removeEventListener("pageshow", onShow);
   };
 }
 
