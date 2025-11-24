@@ -57,13 +57,13 @@ export default function LoginPage() {
 
   // OTP modal (post-password step)
   const [otpOpen, setOtpOpen] = useState(false);
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState<string[]>(Array(OTP_LEN).fill(""));
   const [otpError, setOtpError] = useState("");
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
 
-  // ✅ refs for OTP inputs so we can auto-advance/focus
+  // refs for OTP inputs so we can auto-advance/focus
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   // Seed passkey flag from local cache (UX only; server is source of truth)
@@ -175,7 +175,7 @@ export default function LoginPage() {
     next[i] = clean;
     setOtp(next);
 
-    // ✅ auto-advance when a digit is entered
+    // auto-advance when a digit is entered
     if (clean && i < OTP_LEN - 1) {
       otpRefs.current[i + 1]?.focus();
       otpRefs.current[i + 1]?.select?.();
@@ -186,13 +186,11 @@ export default function LoginPage() {
     const key = e.key;
 
     if (key === "Backspace") {
-      // if current box has value, clear it
       if (otp[i]) {
         const next = [...otp];
         next[i] = "";
         setOtp(next);
       } else if (i > 0) {
-        // move back if empty
         otpRefs.current[i - 1]?.focus();
         const next = [...otp];
         next[i - 1] = "";
@@ -634,7 +632,6 @@ export default function LoginPage() {
                   maxLength={1}
                   inputMode="numeric"
                   value={v}
-                  ref={(el) => (otpRefs.current[i] = el)}
                   onChange={(e) => handleOtpChange(i, e.target.value)}
                   onKeyDown={(e) => handleOtpKeyDown(i, e)}
                   onPaste={handleOtpPaste}
