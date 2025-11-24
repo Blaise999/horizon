@@ -5,6 +5,7 @@
 // - Robust request()/requestSafe() with timeout + single retry on transient errors
 // - Never synthesizes recipient:{} in string mode (prevents backend trim() crashes)
 // - Adds Idempotency-Key automatically for mutating requests (override/disable via opts)
+// - ✅ Session-only auth token helpers (sessionStorage) + optional auto-clear on tab close/back
 
 /* ───────────────────────── Base/Joiner ───────────────────────── */
 function sanitizeBase(raw?: string) {
@@ -91,6 +92,64 @@ type ReqOpts = {
   /** Provide a custom Idempotency-Key string, or false to disable auto-key for mutating requests */
   idempotency?: string | false;
 };
+
+/* ───────────────────────── Auth token (session-only) ─────────────────────────
+   ✅ Token dies when tab/window dies.
+   ✅ Also clears any legacy localStorage token.
+   Call setToken(...) after login if your backend returns a bearer.
+   If cookie-based auth only, these are harmless no-ops.
+---------------------------------------------------------------------------- */
+export const TOKEN_KEY = "horizon_token";
+
+export function getToken() {
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(TOKEN_KEY, token);
+    // kill any old persisted token
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
+export function clearToken() {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {}
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
+/**
+ * Optional helper: clears token on tab close / BFCache restore.
+ * Use once (e.g. in root layout client guard).
+ */
+export function installSessionTokenAutoClear() {
+  if (typeof window === "undefined") return () => {};
+  const kill = () => clearToken();
+
+  try {
+    // extra safety: nuke legacy persisted token on first run
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+
+  window.addEventListener("pagehide", kill);
+  window.addEventListener("beforeunload", kill);
+
+  return () => {
+    window.removeEventListener("pagehide", kill);
+    window.removeEventListener("beforeunload", kill);
+  };
+}
 
 /* ───────────────────────── Errors/Fetch ───────────────────────── */
 
@@ -196,7 +255,11 @@ function isRetryable(err: any) {
   // Abort/network errors
   if (err?.name === "AbortError") return true;
   if (err instanceof TypeError) return true;
-  if (typeof err?.message === "string" && /network|timeout/i.test(err.message)) return true;
+  if (
+    typeof err?.message === "string" &&
+    /network|timeout/i.test(err.message)
+  )
+    return true;
 
   // HTTP 5xx wrapped in ApiError
   if (err instanceof ApiError && err.status >= 500) return true;
@@ -215,6 +278,15 @@ export async function request<T = any>(path: string, opts: ReqOpts = {}) {
     ...(hasBody ? { "Content-Type": "application/json" } : {}),
     ...((opts.headers as Record<string, string>) || {}),
   };
+
+  // ✅ Inject bearer token if present (case-insensitive guard)
+  const token = getToken();
+  const hasAuthHeader = Object.keys(headers).some(
+    (k) => k.toLowerCase() === "authorization"
+  );
+  if (token && !hasAuthHeader) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
   if (method !== "GET" && method !== "DELETE") {
     const wantIdem =
@@ -247,7 +319,9 @@ export async function request<T = any>(path: string, opts: ReqOpts = {}) {
 
       if (!res.ok) {
         const msg =
-          (data && (data.error || data.message)) || text || `HTTP ${res.status}`;
+          (data && (data.error || data.message)) ||
+          text ||
+          `HTTP ${res.status}`;
         throw new ApiError(msg, res.status, url, data ?? text);
       }
       return (data as T) ?? ({} as T);
@@ -290,6 +364,15 @@ export async function requestSafe<T = any>(
       ...((opts.headers as Record<string, string>) || {}),
     };
 
+    // ✅ Inject bearer token if present
+    const token = getToken();
+    const hasAuthHeader = Object.keys(headers).some(
+      (k) => k.toLowerCase() === "authorization"
+    );
+    if (token && !hasAuthHeader) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
     if (method !== "GET" && method !== "DELETE") {
       const wantIdem =
         opts.idempotency === false
@@ -318,7 +401,9 @@ export async function requestSafe<T = any>(
       });
       if (!res.ok) {
         const msg =
-          (data && (data.error || data.message)) || text || `HTTP ${res.status}`;
+          (data && (data.error || data.message)) ||
+          text ||
+          `HTTP ${res.status}`;
         return {
           ok: false as const,
           error: msg,
@@ -326,7 +411,11 @@ export async function requestSafe<T = any>(
           body: data ?? text,
         };
       }
-      return { ok: true as const, data: (data as T) ?? ({} as T), status: res.status };
+      return {
+        ok: true as const,
+        data: (data as T) ?? ({} as T),
+        status: res.status,
+      };
     };
 
     const first = await exec();
@@ -364,6 +453,18 @@ export async function requestRaw(
     [init.signal, timeoutCtrl.signal].filter(Boolean) as AbortSignal[]
   );
 
+  // ✅ Add token to raw requests too (if caller didn’t set auth)
+  const rawHeaders: Record<string, string> = {
+    ...((init.headers as Record<string, string>) || {}),
+  };
+  const token = getToken();
+  const hasAuthHeader = Object.keys(rawHeaders).some(
+    (k) => k.toLowerCase() === "authorization"
+  );
+  if (token && !hasAuthHeader) {
+    rawHeaders.Authorization = `Bearer ${token}`;
+  }
+
   ensureParsable(url);
   try {
     return await fetch(url, {
@@ -371,6 +472,7 @@ export async function requestRaw(
       credentials: "include",
       signal,
       ...init,
+      headers: rawHeaders,
     });
   } finally {
     if (timer) clearTimeout(timer);
@@ -407,23 +509,29 @@ function parseMoneyToNumber(v: any): number {
 }
 
 /** Prefer explicit string fields, then object fields (if present). */
-function coalesceNameFrom(p: any, hasRecipientObject: boolean): string | undefined {
+function coalesceNameFrom(
+  p: any,
+  hasRecipientObject: boolean
+): string | undefined {
   const direct =
     (typeof p?.recipientName === "string" && p.recipientName) ||
     (typeof p?.["Recipient Name"] === "string" && p["Recipient Name"]) ||
     (typeof p?.recipient_name === "string" && p.recipient_name) ||
     (hasRecipientObject
-      ? (p?.recipient?.name ??
-         p?.recipient?.tag ??
-         p?.recipient?.email ??
-         p?.recipient?.phone ??
-         undefined)
+      ? p?.recipient?.name ??
+        p?.recipient?.tag ??
+        p?.recipient?.email ??
+        p?.recipient?.phone ??
+        undefined
       : undefined) ||
-    (p?.firstName || p?.lastName ? `${p?.firstName ?? ""} ${p?.lastName ?? ""}` : undefined) ||
+    (p?.firstName || p?.lastName
+      ? `${p?.firstName ?? ""} ${p?.lastName ?? ""}`
+      : undefined) ||
     (typeof p?.name === "string" && p.name) ||
     undefined;
 
-  const cleaned = typeof direct === "string" ? direct.replace(/\s+/g, " ").trim() : undefined;
+  const cleaned =
+    typeof direct === "string" ? direct.replace(/\s+/g, " ").trim() : undefined;
   return cleaned && cleaned.length ? cleaned : undefined;
 }
 
@@ -436,7 +544,9 @@ function normalizeOutboundPayload(raw: any) {
   const p: any = { ...src };
 
   const hasRecipientObject =
-    p.recipient && typeof p.recipient === "object" && !Array.isArray(p.recipient);
+    p.recipient &&
+    typeof p.recipient === "object" &&
+    !Array.isArray(p.recipient);
 
   const name = coalesceNameFrom(p, hasRecipientObject);
 
@@ -455,11 +565,19 @@ function normalizeOutboundPayload(raw: any) {
     // Common alias shims (only when in object mode)
     if (!p.recipient.routingNumber) {
       p.recipient.routingNumber =
-        p.recipient.routingNumber ?? p.routingNumber ?? p.routing ?? p.aba ?? undefined;
+        p.recipient.routingNumber ??
+        p.routingNumber ??
+        p.routing ??
+        p.aba ??
+        undefined;
     }
     if (!p.recipient.accountNumber) {
       p.recipient.accountNumber =
-        p.recipient.accountNumber ?? p.accountNumber ?? p.account ?? p.acctNumber ?? undefined;
+        p.recipient.accountNumber ??
+        p.accountNumber ??
+        p.account ??
+        p.acctNumber ??
+        undefined;
     }
     if (!p.recipient.bankName) {
       p.recipient.bankName = p.recipient.bankName ?? p.bankName ?? undefined;
@@ -468,13 +586,19 @@ function normalizeOutboundPayload(raw: any) {
     // Address shims
     p.recipient.address = { ...(p.recipient.address || {}) };
     p.recipient.address.street1 =
-      p.recipient.address.street1 ?? p.street1 ?? p.addressLine1 ?? p.address1 ?? undefined;
-    p.recipient.address.city =
-      p.recipient.address.city ?? p.city ?? undefined;
+      p.recipient.address.street1 ??
+      p.street1 ??
+      p.addressLine1 ??
+      p.address1 ??
+      undefined;
+    p.recipient.address.city = p.recipient.address.city ?? p.city ?? undefined;
     p.recipient.address.state =
       p.recipient.address.state ?? p.state ?? p.stateUS ?? undefined;
     p.recipient.address.postalCode =
-      p.recipient.address.postalCode ?? p.zip ?? p.postalCode ?? undefined;
+      p.recipient.address.postalCode ??
+      p.zip ??
+      p.postalCode ??
+      undefined;
     p.recipient.address.country =
       p.recipient.address.country ?? p.country ?? p.recipientCountry ?? "US";
   } else {
@@ -501,7 +625,9 @@ function normalizeOutboundPayload(raw: any) {
 
   // Amount normalization
   const currency = p.currency || p.amount?.currency || "USD";
-  const asNumber = parseMoneyToNumber(p.amount ?? p.usd ?? p.value ?? p.amountValue ?? p.amountUSD);
+  const asNumber = parseMoneyToNumber(
+    p.amount ?? p.usd ?? p.value ?? p.amountValue ?? p.amountUSD
+  );
   p.amount = asNumber;
   p.currency = currency;
 
@@ -513,10 +639,9 @@ function normalizeOutboundPayload(raw: any) {
 
 /* ───────────────── Endpoint resolver (generic) ───────────────── */
 function resolveTransferEndpoint(p: any): string {
-  const looksDeposit =
-    ["deposit", "add_money", "addmoney"].includes(
-      String(p?.type || p?.intent || p?.rail || "").toLowerCase()
-    );
+  const looksDeposit = ["deposit", "add_money", "addmoney"].includes(
+    String(p?.type || p?.intent || p?.rail || "").toLowerCase()
+  );
   if (looksDeposit) return "/transfer/deposit";
 
   const rail = String(p?.rail || p?.method || p?.type || "").toLowerCase();
@@ -569,7 +694,11 @@ export async function uploadAvatarUnsigned(
     throw new ApiError("uploadAvatarUnsigned: expected a File", 0, "cloudinary");
   }
   if (!/^image\//.test(file.type)) {
-    throw new ApiError("Please upload an image file (png/jpg/webp).", 0, "cloudinary");
+    throw new ApiError(
+      "Please upload an image file (png/jpg/webp).",
+      0,
+      "cloudinary"
+    );
   }
   if (file.size > 5 * 1024 * 1024) {
     throw new ApiError("Max avatar size is 5MB.", 0, "cloudinary");
@@ -596,7 +725,13 @@ export async function uploadAvatarUnsigned(
   }
 
   const url = json?.secure_url || json?.url;
-  if (!url) throw new ApiError("Upload succeeded but no URL returned.", res.status, endpoint, json);
+  if (!url)
+    throw new ApiError(
+      "Upload succeeded but no URL returned.",
+      res.status,
+      endpoint,
+      json
+    );
   return String(url);
 }
 
@@ -750,7 +885,9 @@ export const API = {
 
   /* Prices (served by Next route /api/prices) */
   getPrices: (ids = "bitcoin", vs = "usd") =>
-    request(`/prices?ids=${encodeURIComponent(ids)}&vs=${encodeURIComponent(vs)}`),
+    request(
+      `/prices?ids=${encodeURIComponent(ids)}&vs=${encodeURIComponent(vs)}`
+    ),
 
   /* Transfers (direct create) */
   createZelle: (payload: any) =>
@@ -816,7 +953,8 @@ export const API = {
     }
 
     const nameStr =
-      (typeof normalized.recipientName === "string" && normalized.recipientName.trim()) ||
+      (typeof normalized.recipientName === "string" &&
+        normalized.recipientName.trim()) ||
       (typeof normalized["Recipient Name"] === "string" &&
         (normalized as any)["Recipient Name"].trim()) ||
       (typeof normalized.recipient_name === "string" &&
@@ -832,7 +970,8 @@ export const API = {
     }
 
     const path = resolveTransferEndpoint(normalized);
-    if (typeof window !== "undefined") console.log("[API→]", path, normalized);
+    if (typeof window !== "undefined")
+      console.log("[API→]", path, normalized);
     return request(path, { method: "POST", json: normalized });
   },
 
@@ -953,11 +1092,7 @@ export function afterCreateTransfer(router: any, result: any) {
       result?.amount && typeof result?.amount === "object"
         ? result?.amount
         : {
-            value:
-              result?.amount ??
-              result?.usd ??
-              result?.value ??
-              0,
+            value: result?.amount ?? result?.usd ?? result?.value ?? 0,
             currency: result?.currency || "USD",
           },
     fees: result?.fees,
@@ -976,8 +1111,7 @@ export async function meBalances() {
     const acc = await API.myAccounts();
     const checking =
       Number(acc?.checking?.available ?? acc?.checking ?? 0) || 0;
-    const savings =
-      Number(acc?.savings?.available ?? acc?.savings ?? 0) || 0;
+    const savings = Number(acc?.savings?.available ?? acc?.savings ?? 0) || 0;
     return { checking, savings };
   } catch {
     const data = await API.me();
