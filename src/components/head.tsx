@@ -15,18 +15,37 @@ export default function Nav() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
 
+  // ✅ single source of truth for all help/support routes
+  const SUPPORT_PATH = "/support";
+
   /* ---------------------- Safe link resolver ---------------------- */
   const KNOWN: string[] = [
-    "/", "/personal", "/cards", "/savings", "/invest", "/security", "/support",
-    "/about", "/blog", "/careers", "/international", "/invoicing",
-    "/expense-cards", "/create-account",
+    "/",
+    "/personal",
+    "/cards",
+    "/savings",
+    "/invest",
+    "/security",
+    "/support",
+    "/about",
+    "/blog",
+    "/careers",
+    "/international",
+    "/invoicing",
+    "/expense-cards",
+    "/create-account",
   ];
+
   const to = (maybeKeyOrPath?: string): string => {
+    // ✅ hard-bind support keys to /support
+    if (maybeKeyOrPath === "SUPPORT") return SUPPORT_PATH;
+
     const p =
       (maybeKeyOrPath && (PATHS as any)[maybeKeyOrPath]) ??
       maybeKeyOrPath ??
       PATHS.CREATE_ACCOUNT ??
       "/create-account";
+
     if (typeof p === "string" && p.startsWith("/")) {
       return KNOWN.includes(p) ? p : (PATHS.CREATE_ACCOUNT ?? "/create-account");
     }
@@ -63,17 +82,23 @@ export default function Nav() {
     };
   }, []);
 
-  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
     document.body.style.overflow = open && isMobile ? "hidden" : prev || "";
-    return () => { document.body.style.overflow = prev || ""; };
+    return () => {
+      document.body.style.overflow = prev || "";
+    };
   }, [open]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
@@ -134,7 +159,11 @@ export default function Nav() {
       >
         <div className="container-x flex items-center justify-between h-full">
           {/* Left: Logo */}
-          <Link href={to("HOME")} className="flex items-center gap-3 -ml-1 sm:-ml-2" aria-label="Horizon Home">
+          <Link
+            href={to("HOME")}
+            className="flex items-center gap-3 -ml-1 sm:-ml-2"
+            aria-label="Horizon Home"
+          >
             <img
               src="/Hero/logo.png"
               alt="Horizon"
@@ -142,7 +171,8 @@ export default function Nav() {
               draggable={false}
               style={{
                 height: logoHeight,
-                transition: "height .25s ease, transform .25s ease, filter .2s ease",
+                transition:
+                  "height .25s ease, transform .25s ease, filter .2s ease",
                 transform: scrolled ? "scale(0.98)" : "scale(1)",
                 filter: scrolled ? "saturate(1.02)" : "saturate(1)",
               }}
@@ -150,25 +180,66 @@ export default function Nav() {
           </Link>
 
           {/* Center: Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-2 text-sm" style={{ color: CSS.text }}>
+          <nav
+            className="hidden md:flex items-center gap-2 text-sm"
+            style={{ color: CSS.text }}
+          >
             {/* Features → all to Create Account */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text2 }}>
+              <button
+                className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5"
+                style={{ color: CSS.text2 }}
+              >
                 Features <ChevronDown size={16} className="opacity-70" />
               </button>
               <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition absolute left-1/2 -translate-x-1/2 top-full pt-2">
-                <div className="card p-5 min-w-[620px] grid grid-cols-2 gap-4 rounded-xl shadow-2xl" style={{ border: `1px solid ${CSS.hair}` }}>
+                <div
+                  className="card p-5 min-w-[620px] grid grid-cols-2 gap-4 rounded-xl shadow-2xl"
+                  style={{ border: `1px solid ${CSS.hair}` }}
+                >
                   {[
-                    { title: "Current Account / Debit Card", desc: "Spend anywhere with instant notifications" },
-                    { title: "Savings & Goals", desc: "Auto-roundups and high-yield vaults" },
-                    { title: "International Transfers", desc: "Low FX fees and fast remittance" },
-                    { title: "Virtual Cards & Analytics", desc: "One-tap controls and clean insights" },
-                    { title: "Investments", desc: "Stocks & ETFs with clear fees" },
-                    { title: "Crypto (optional)", desc: "Simple on/off-ramps, secure custody" },
+                    {
+                      title: "Current Account / Debit Card",
+                      desc: "Spend anywhere with instant notifications",
+                    },
+                    {
+                      title: "Savings & Goals",
+                      desc: "Auto-roundups and high-yield vaults",
+                    },
+                    {
+                      title: "International Transfers",
+                      desc: "Low FX fees and fast remittance",
+                    },
+                    {
+                      title: "Virtual Cards & Analytics",
+                      desc: "One-tap controls and clean insights",
+                    },
+                    {
+                      title: "Investments",
+                      desc: "Stocks & ETFs with clear fees",
+                    },
+                    {
+                      title: "Crypto (optional)",
+                      desc: "Simple on/off-ramps, secure custody",
+                    },
                   ].map((item) => (
-                    <Link key={item.title} href={to("CREATE_ACCOUNT")} className="rounded-lg p-3 hover:bg-white/5">
-                      <div className="text-[13px] font-medium" style={{ color: CSS.text }}>{item.title}</div>
-                      <div className="text-xs mt-0.5" style={{ color: CSS.text2 }}>{item.desc}</div>
+                    <Link
+                      key={item.title}
+                      href={to("CREATE_ACCOUNT")}
+                      className="rounded-lg p-3 hover:bg-white/5"
+                    >
+                      <div
+                        className="text-[13px] font-medium"
+                        style={{ color: CSS.text }}
+                      >
+                        {item.title}
+                      </div>
+                      <div
+                        className="text-xs mt-0.5"
+                        style={{ color: CSS.text2 }}
+                      >
+                        {item.desc}
+                      </div>
                     </Link>
                   ))}
                 </div>
@@ -177,18 +248,29 @@ export default function Nav() {
 
             {/* For You */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text2 }}>
+              <button
+                className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5"
+                style={{ color: CSS.text2 }}
+              >
                 For You <ChevronDown size={16} className="opacity-70" />
               </button>
               <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition absolute left-0 top-full pt-2">
-                <div className="card p-3 min-w-[240px] rounded-xl shadow-2xl" style={{ border: `1px solid ${CSS.hair}` }}>
+                <div
+                  className="card p-3 min-w-[240px] rounded-xl shadow-2xl"
+                  style={{ border: `1px solid ${CSS.hair}` }}
+                >
                   {[
                     { label: "Personal Banking", href: "/personal" },
                     { label: "Cards & Controls", href: "/cards" },
                     { label: "Savings & Goals", href: "/savings" },
                     { label: "Invest & Grow", href: "/invest" },
                   ].map((l) => (
-                    <Link key={l.label} href={to(l.href)} className="block px-3 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text }}>
+                    <Link
+                      key={l.label}
+                      href={to(l.href)}
+                      className="block px-3 py-2 rounded-md hover:bg-white/5"
+                      style={{ color: CSS.text }}
+                    >
                       {l.label}
                     </Link>
                   ))}
@@ -198,17 +280,28 @@ export default function Nav() {
 
             {/* For Business */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text2 }}>
+              <button
+                className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5"
+                style={{ color: CSS.text2 }}
+              >
                 For Business <ChevronDown size={16} className="opacity-70" />
               </button>
               <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition absolute left-0 top-full pt-2">
-                <div className="card p-3 min-w-[260px] rounded-xl shadow-2xl" style={{ border: `1px solid ${CSS.hair}` }}>
+                <div
+                  className="card p-3 min-w-[260px] rounded-xl shadow-2xl"
+                  style={{ border: `1px solid ${CSS.hair}` }}
+                >
                   {[
                     { label: "Transfer Logic", href: "/invoicing" },
                     { label: "Expense Cards", href: "/expense-cards" },
                     { label: "Business Accounts", href: to("CREATE_ACCOUNT") },
                   ].map((l) => (
-                    <Link key={l.label} href={to(l.href)} className="block px-3 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text }}>
+                    <Link
+                      key={l.label}
+                      href={to(l.href)}
+                      className="block px-3 py-2 rounded-md hover:bg-white/5"
+                      style={{ color: CSS.text }}
+                    >
                       {l.label}
                     </Link>
                   ))}
@@ -218,18 +311,29 @@ export default function Nav() {
 
             {/* Company */}
             <div className="relative group">
-              <button className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text2 }}>
+              <button
+                className="flex items-center gap-1 px-4 py-2 rounded-md hover:bg-white/5"
+                style={{ color: CSS.text2 }}
+              >
                 Company <ChevronDown size={16} className="opacity-70" />
               </button>
               <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition absolute left-0 top-full pt-2">
-                <div className="card p-3 min-w-[240px] rounded-xl shadow-2xl" style={{ border: `1px solid ${CSS.hair}` }}>
+                <div
+                  className="card p-3 min-w-[240px] rounded-xl shadow-2xl"
+                  style={{ border: `1px solid ${CSS.hair}` }}
+                >
                   {[
                     { label: "About Us", href: "/about" },
                     { label: "Careers", href: "/careers" },
                     { label: "Blog / Press", href: "/blog" },
                     { label: "Security", href: "/security" },
                   ].map((l) => (
-                    <Link key={l.label} href={to(l.href)} className="block px-3 py-2 rounded-md hover:bg-white/5" style={{ color: CSS.text }}>
+                    <Link
+                      key={l.label}
+                      href={to(l.href)}
+                      className="block px-3 py-2 rounded-md hover:bg-white/5"
+                      style={{ color: CSS.text }}
+                    >
                       {l.label}
                     </Link>
                   ))}
@@ -237,8 +341,9 @@ export default function Nav() {
               </div>
             </div>
 
+            {/* ✅ Help always to /support */}
             <Link
-              href={to("SUPPORT")}
+              href={SUPPORT_PATH}
               className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-white/5"
               style={{ color: CSS.text }}
             >
@@ -256,7 +361,9 @@ export default function Nav() {
                 borderRadius: CSS.rBtn,
                 background: scrolled ? "rgba(255,255,255,.9)" : CSS.cta,
                 color: "#0B0F14",
-                boxShadow: scrolled ? "inset 0 1px 0 rgba(255,255,255,.25)" : "0 10px 28px rgba(0,180,216,.35)",
+                boxShadow: scrolled
+                  ? "inset 0 1px 0 rgba(255,255,255,.25)"
+                  : "0 10px 28px rgba(0,180,216,.35)",
               }}
             >
               Open account
@@ -287,20 +394,33 @@ export default function Nav() {
           }}
           onClick={() => setOpen(false)}
         >
-          <div role="dialog" aria-modal="true" className="container-x pt-4 h-full" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="container-x pt-4 h-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div
               className="mx-auto rounded-3xl mt-4 max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] p-5"
               style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
                 border: `1px solid ${CSS.hair}`,
-                paddingBottom: "calc(env(safe-area-inset-bottom,0px) + 20px)",
+                paddingBottom:
+                  "calc(env(safe-area-inset-bottom,0px) + 20px)",
                 color: CSS.text,
               }}
             >
               <div className="sticky top-0 z-10 -mx-5 px-5 pb-3 pt-1 bg-transparent">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3 -ml-1">
-                    <img src="/Hero/logo.png" alt="Horizon" className="select-none" draggable={false} style={{ height: 56, width: "auto" }} />
+                    <img
+                      src="/Hero/logo.png"
+                      alt="Horizon"
+                      className="select-none"
+                      draggable={false}
+                      style={{ height: 56, width: "auto" }}
+                    />
                   </div>
                   <button
                     aria-label="Close menu"
@@ -319,7 +439,12 @@ export default function Nav() {
                   <button
                     key={i}
                     className="px-3 py-1.5 border"
-                    style={{ borderRadius: CSS.rChip, background: "rgba(255,255,255,.06)", borderColor: CSS.hair, color: CSS.text }}
+                    style={{
+                      borderRadius: CSS.rChip,
+                      background: "rgba(255,255,255,.06)",
+                      borderColor: CSS.hair,
+                      color: CSS.text,
+                    }}
                   >
                     {c}
                   </button>
@@ -330,7 +455,10 @@ export default function Nav() {
               <div className="space-y-6">
                 {/* Features → Create Account */}
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider mb-2" style={{ color: CSS.text2 }}>
+                  <div
+                    className="text-[11px] uppercase tracking-wider mb-2"
+                    style={{ color: CSS.text2 }}
+                  >
                     Features / Products
                   </div>
                   <div className="grid grid-cols-1 gap-2">
@@ -347,7 +475,11 @@ export default function Nav() {
                         href={to("CREATE_ACCOUNT")}
                         className="card card-hover px-4 py-3 rounded-xl"
                         onClick={() => setOpen(false)}
-                        style={{ border: `1px solid ${CSS.hair}`, background: "rgba(255,255,255,.04)", color: CSS.text }}
+                        style={{
+                          border: `1px solid ${CSS.hair}`,
+                          background: "rgba(255,255,255,.04)",
+                          color: CSS.text,
+                        }}
                       >
                         {label}
                       </Link>
@@ -358,7 +490,10 @@ export default function Nav() {
                 {/* For You */}
                 <div className="grid grid-cols-1 gap-6">
                   <div>
-                    <div className="text-[11px] uppercase tracking-wider mb-2" style={{ color: CSS.text2 }}>
+                    <div
+                      className="text-[11px] uppercase tracking-wider mb-2"
+                      style={{ color: CSS.text2 }}
+                    >
                       For You
                     </div>
                     <div className="grid grid-cols-1 gap-2">
@@ -373,7 +508,11 @@ export default function Nav() {
                           href={to(l.href)}
                           className="card card-hover px-4 py-3 rounded-xl"
                           onClick={() => setOpen(false)}
-                          style={{ border: `1px solid ${CSS.hair}`, background: "rgba(255,255,255,.04)", color: CSS.text }}
+                          style={{
+                            border: `1px solid ${CSS.hair}`,
+                            background: "rgba(255,255,255,.04)",
+                            color: CSS.text,
+                          }}
                         >
                           {l.label}
                         </Link>
@@ -383,7 +522,10 @@ export default function Nav() {
 
                   {/* For Business */}
                   <div>
-                    <div className="text-[11px] uppercase tracking-wider mb-2" style={{ color: CSS.text2 }}>
+                    <div
+                      className="text-[11px] uppercase tracking-wider mb-2"
+                      style={{ color: CSS.text2 }}
+                    >
                       For Business
                     </div>
                     <div className="grid grid-cols-1 gap-2">
@@ -397,7 +539,11 @@ export default function Nav() {
                           href={to(l.href)}
                           className="card card-hover px-4 py-3 rounded-xl"
                           onClick={() => setOpen(false)}
-                          style={{ border: `1px solid ${CSS.hair}`, background: "rgba(255,255,255,.04)", color: CSS.text }}
+                          style={{
+                            border: `1px solid ${CSS.hair}`,
+                            background: "rgba(255,255,255,.04)",
+                            color: CSS.text,
+                          }}
                         >
                           {l.label}
                         </Link>
@@ -408,7 +554,10 @@ export default function Nav() {
 
                 {/* Company */}
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider mb-2" style={{ color: CSS.text2 }}>
+                  <div
+                    className="text-[11px] uppercase tracking-wider mb-2"
+                    style={{ color: CSS.text2 }}
+                  >
                     Company
                   </div>
                   <div className="grid grid-cols-1 gap-2">
@@ -423,7 +572,11 @@ export default function Nav() {
                         href={to(l.href)}
                         className="card card-hover px-4 py-3 rounded-xl"
                         onClick={() => setOpen(false)}
-                        style={{ border: `1px solid ${CSS.hair}`, background: "rgba(255,255,255,.04)", color: CSS.text }}
+                        style={{
+                          border: `1px solid ${CSS.hair}`,
+                          background: "rgba(255,255,255,.04)",
+                          color: CSS.text,
+                        }}
                       >
                         {l.label}
                       </Link>
@@ -431,23 +584,30 @@ export default function Nav() {
                   </div>
                 </div>
 
-                {/* Help */}
+                {/* ✅ Help & Support → always /support */}
                 <div>
-                  <div className="text-[11px] uppercase tracking-wider mb-2" style={{ color: CSS.text2 }}>
+                  <div
+                    className="text-[11px] uppercase tracking-wider mb-2"
+                    style={{ color: CSS.text2 }}
+                  >
                     Help & Support
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     {[
-                      { label: "Help Center", href: to("SUPPORT") },
-                      { label: "Live Chat", href: to("SUPPORT") },
-                      { label: "Contact", href: to("SUPPORT") },
+                      { label: "Help Center", href: SUPPORT_PATH },
+                      { label: "Live Chat", href: SUPPORT_PATH },
+                      { label: "Contact", href: SUPPORT_PATH },
                     ].map((l) => (
                       <Link
                         key={l.label}
-                        href={typeof l.href === "string" ? l.href : to("SUPPORT")}
+                        href={l.href}
                         className="card card-hover px-4 py-3 rounded-xl"
                         onClick={() => setOpen(false)}
-                        style={{ border: `1px solid ${CSS.hair}`, background: "rgba(255,255,255,.04)", color: CSS.text }}
+                        style={{
+                          border: `1px solid ${CSS.hair}`,
+                          background: "rgba(255,255,255,.04)",
+                          color: CSS.text,
+                        }}
                       >
                         {l.label}
                       </Link>
@@ -460,7 +620,11 @@ export default function Nav() {
                   href={to("CREATE_ACCOUNT")}
                   className="mt-2 px-5 py-3 font-medium text-center block"
                   onClick={() => setOpen(false)}
-                  style={{ borderRadius: CSS.rBtn, background: CSS.cta, color: "#0B0F14" }}
+                  style={{
+                    borderRadius: CSS.rBtn,
+                    background: CSS.cta,
+                    color: "#0B0F14",
+                  }}
                 >
                   Open account
                 </Link>
