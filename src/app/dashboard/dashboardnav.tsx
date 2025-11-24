@@ -28,7 +28,7 @@ import API, { meUser, request } from "@/libs/api";
    - Auto-loads user (name, setupPercent) from /users/me
    - Auto-loads activities for notificationsCount (fallback to 0)
    - All transfer actions route to /Transfer/transfermethod (hub)
-   - Still supports caller-provided props; autoLoad can be disabled
+   - Support routes HARD to /dashboard/support (this file)
 ---------------------------------------------------------------------------- */
 
 export type DashboardNavProps = {
@@ -42,7 +42,7 @@ export type DashboardNavProps = {
   onOpenNotifications?: () => void;
   onOpenProfile?: () => void;
   onOpenSettings?: () => void;
-  onOpenSupport?: () => void;
+  onOpenSupport?: () => void; // kept for compatibility, but support routing is forced
   onOpenCardsManager?: () => void;
   onOpenInsights?: () => void;
   onOpenTransactions?: () => void;
@@ -53,7 +53,7 @@ export type DashboardNavProps = {
 type Activity = {
   id: string;
   createdAt?: string;
-  unread?: boolean;               // <-- add unread flag (server shape)
+  unread?: boolean; // <-- add unread flag (server shape)
   meta?: Record<string, any>;
 };
 
@@ -105,7 +105,7 @@ export default function DashboardNav({
         try {
           const acts = await request<{ items: Activity[] }>("/users/me/activities");
           const list = Array.isArray(acts?.items) ? acts.items : [];
-          const unread = list.filter((a) => a.unread === true).length; // <-- key change
+          const unread = list.filter((a) => a.unread === true).length;
           setNotificationsCount(unread || 0);
         } catch {
           // ignore activities errors
@@ -131,8 +131,11 @@ export default function DashboardNav({
   const goGoals = () => go(PATHS.GOALS || "/dashboard/goals");
   const goRecurring = () => go(PATHS.RECURRING || "/dashboard/recurring");
   const goSettings = () => go(PATHS.SETTINGS || "/dashboard/settings");
-  const goSupport = () => go(PATHS.SUPPORT || "/dashboard/support");
-  const goNotifications = () => go(PATHS.NOTIFICATIONS || "/notifications"); // <-- new
+
+  // ✅ HARD ROUTE Support to this dashboard page
+  const goSupport = () => go("/dashboard/support");
+
+  const goNotifications = () => go(PATHS.NOTIFICATIONS || "/notifications");
 
   // Transfer hub route (ALL transfer entries go here)
   const goTransferHub = () => go("/Transfer/transfermethod");
@@ -201,8 +204,12 @@ export default function DashboardNav({
     return scrolled ? { bar: 84, logo: 74 } : { bar: 106, logo: 96 };
   })();
 
-  const baseTop = `color-mix(in oklab, var(--page-grad-top, #0b0f14) ${scrolled ? "96%" : "88%"}, black 0%)`;
-  const baseBot = `color-mix(in oklab, var(--page-grad-bot, #0b0f14) ${scrolled ? "86%" : "74%"}, black 0%)`;
+  const baseTop = `color-mix(in oklab, var(--page-grad-top, #0b0f14) ${
+    scrolled ? "96%" : "88%"
+  }, black 0%)`;
+  const baseBot = `color-mix(in oklab, var(--page-grad-bot, #0b0f14) ${
+    scrolled ? "86%" : "74%"
+  }, black 0%)`;
   const headerBackground = `linear-gradient(180deg, ${baseTop}, ${baseBot})`;
 
   return (
@@ -217,7 +224,9 @@ export default function DashboardNav({
           borderBottom: scrolled
             ? "1px solid rgba(255,255,255,0.10)"
             : "1px solid rgba(255,255,255,0.06)",
-          boxShadow: scrolled ? "0 8px 28px rgba(0,0,0,.32)" : "0 12px 36px rgba(0,0,0,.24)",
+          boxShadow: scrolled
+            ? "0 8px 28px rgba(0,0,0,.32)"
+            : "0 12px 36px rgba(0,0,0,.24)",
         }}
       >
         {/* TRUE full-width container (no max-width) */}
@@ -249,7 +258,9 @@ export default function DashboardNav({
                 </div>
                 <div className="text-[11px] text-white/60">
                   {typeof setupPercent === "number" ? (
-                    <span>Setup {Math.max(0, Math.min(100, setupPercent))}%</span>
+                    <span>
+                      Setup {Math.max(0, Math.min(100, setupPercent))}%
+                    </span>
                   ) : (
                     <span>Welcome back</span>
                   )}
@@ -257,8 +268,21 @@ export default function DashboardNav({
               </div>
               {typeof setupPercent === "number" && (
                 <div className="relative h-8 w-8 rounded-full grid place-items-center bg-white/5 border border-white/10">
-                  <svg width="32" height="32" viewBox="0 0 36 36" className="-rotate-90 opacity-80">
-                    <circle cx="18" cy="18" r="14" stroke="white" strokeOpacity="0.15" strokeWidth="4" fill="none" />
+                  <svg
+                    width="32"
+                    height="32"
+                    viewBox="0 0 36 36"
+                    className="-rotate-90 opacity-80"
+                  >
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      stroke="white"
+                      strokeOpacity="0.15"
+                      strokeWidth="4"
+                      fill="none"
+                    />
                     <circle
                       cx="18"
                       cy="18"
@@ -269,7 +293,9 @@ export default function DashboardNav({
                       fill="none"
                       strokeDasharray={`${2 * Math.PI * 14}`}
                       strokeDashoffset={`${
-                        (1 - Math.max(0, Math.min(100, setupPercent)) / 100) * (2 * Math.PI * 14)
+                        (1 -
+                          Math.max(0, Math.min(100, setupPercent)) / 100) *
+                        (2 * Math.PI * 14)
                       }`}
                     />
                   </svg>
@@ -299,8 +325,11 @@ export default function DashboardNav({
               Insights
             </button>
 
-            {/* Transfers: click → hub; hover shows menu (also routes to hub) */}
-            <div className="relative" onMouseLeave={() => setTransfersOpen(false)}>
+            {/* Transfers */}
+            <div
+              className="relative"
+              onMouseLeave={() => setTransfersOpen(false)}
+            >
               <button
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-white/80 hover:text-white hover:bg-white/5"
                 onMouseEnter={() => setTransfersOpen(true)}
@@ -349,6 +378,15 @@ export default function DashboardNav({
             >
               Recurring
             </button>
+
+            {/* ✅ Support always routes to /dashboard/support */}
+            <button
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-white/80 hover:text-white hover:bg-white/5"
+              onClick={goSupport}
+            >
+              <HelpCircle size={15} className="opacity-80" />
+              Support
+            </button>
           </nav>
 
           {/* Right controls */}
@@ -364,7 +402,9 @@ export default function DashboardNav({
             <button
               aria-label="Notifications"
               className="relative h-10 w-10 rounded-2xl hover:bg-white/10 active:scale-[.98] transition grid place-items-center"
-              onClick={() => callOrRoute(onOpenNotifications, goNotifications)}  /* <-- route to /notifications */
+              onClick={() =>
+                callOrRoute(onOpenNotifications, goNotifications)
+              }
             >
               <Bell size={18} />
               {notificationsCount > 0 && (
@@ -390,7 +430,9 @@ export default function DashboardNav({
               <div className="h-8 w-8 rounded-full bg-white/10 border border-white/10 grid place-items-center">
                 <User2 size={15} className="opacity-80" />
               </div>
-              <span className="text-xs text-white/80 max-w-[120px] truncate">{userName}</span>
+              <span className="text-xs text-white/80 max-w-[120px] truncate">
+                {userName}
+              </span>
             </button>
 
             <button
@@ -410,7 +452,9 @@ export default function DashboardNav({
       {open && (
         <div
           className="fixed inset-0 z-[60] overflow-y-auto"
-          style={{ background: `linear-gradient(180deg, ${baseTop}, ${baseBot})` }}
+          style={{
+            background: `linear-gradient(180deg, ${baseTop}, ${baseBot})`,
+          }}
           onClick={() => setOpen(false)}
         >
           <div
@@ -441,25 +485,40 @@ export default function DashboardNav({
             <div
               className="mx-auto rounded-3xl overflow-hidden p-4 backdrop-blur-md"
               style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
                 border: "1px solid rgba(255,255,255,0.12)",
               }}
             >
               {/* Quick Actions */}
               <div className="space-y-4">
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">Quick Actions</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">
+                    Quick Actions
+                  </div>
                   <div className="grid grid-cols-2 gap-1.5">
-                    <button className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5" onClick={goAddMoney}>
+                    <button
+                      className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5"
+                      onClick={goAddMoney}
+                    >
                       <Wallet size={15} className="opacity-80" /> Add Money
                     </button>
-                    <button className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5" onClick={goTransferHub}>
+                    <button
+                      className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5"
+                      onClick={goTransferHub}
+                    >
                       <ArrowRightLeft size={15} className="opacity-80" /> Transfer
                     </button>
-                    <button className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5" onClick={goPayBill}>
+                    <button
+                      className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5"
+                      onClick={goPayBill}
+                    >
                       <Plus size={15} className="opacity-80" /> Pay Bill
                     </button>
-                    <button className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5" onClick={() => callOrRoute(onOpenCardsManager, goCards)}>
+                    <button
+                      className="card card-hover px-3 py-2.5 rounded-xl flex items-center gap-1.5"
+                      onClick={() => callOrRoute(onOpenCardsManager, goCards)}
+                    >
                       <CreditCard size={15} className="opacity-80" /> Cards
                     </button>
                   </div>
@@ -468,15 +527,40 @@ export default function DashboardNav({
                 {/* Sections */}
                 <div className="grid grid-cols-1 gap-5">
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">Dashboard</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">
+                      Dashboard
+                    </div>
                     <div className="grid grid-cols-1 gap-1.5">
                       {[
-                        { label: "Overview", onClick: () => callOrRoute(onOpenTransactions, goOverview) },
-                        { label: "Transactions", onClick: () => callOrRoute(onOpenTransactions, goTransactions) },
-                        { label: "Insights", onClick: () => callOrRoute(onOpenInsights, goInsights) },
-                        { label: "Cards", onClick: () => callOrRoute(onOpenCardsManager, goCards) },
-                        { label: "Goals", onClick: () => callOrRoute(onOpenGoals, goGoals) },
-                        { label: "Recurring", onClick: () => callOrRoute(onOpenRecurring, goRecurring) },
+                        {
+                          label: "Overview",
+                          onClick: () =>
+                            callOrRoute(onOpenTransactions, goOverview),
+                        },
+                        {
+                          label: "Transactions",
+                          onClick: () =>
+                            callOrRoute(onOpenTransactions, goTransactions),
+                        },
+                        {
+                          label: "Insights",
+                          onClick: () =>
+                            callOrRoute(onOpenInsights, goInsights),
+                        },
+                        {
+                          label: "Cards",
+                          onClick: () =>
+                            callOrRoute(onOpenCardsManager, goCards),
+                        },
+                        {
+                          label: "Goals",
+                          onClick: () => callOrRoute(onOpenGoals, goGoals),
+                        },
+                        {
+                          label: "Recurring",
+                          onClick: () =>
+                            callOrRoute(onOpenRecurring, goRecurring),
+                        },
                       ].map((l) => (
                         <button
                           key={l.label}
@@ -493,25 +577,68 @@ export default function DashboardNav({
                   </div>
 
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">Transfers</div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">
+                      Transfers
+                    </div>
                     <div className="grid grid-cols-1 gap-1.5">
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goTransferHub}>USA Transfer</button>
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goTransferHub}>Wire Transfer</button>
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goTransferHub}>International</button>
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goTransferHub}>Crypto</button>
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goAddMoney}>Add Money</button>
-                      <button className="card card-hover px-3 py-2.5 rounded-xl text-left" onClick={goPayBill}>Pay Bill</button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goTransferHub}
+                      >
+                        USA Transfer
+                      </button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goTransferHub}
+                      >
+                        Wire Transfer
+                      </button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goTransferHub}
+                      >
+                        International
+                      </button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goTransferHub}
+                      >
+                        Crypto
+                      </button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goAddMoney}
+                      >
+                        Add Money
+                      </button>
+                      <button
+                        className="card card-hover px-3 py-2.5 rounded-xl text-left"
+                        onClick={goPayBill}
+                      >
+                        Pay Bill
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Support & Settings */}
                 <div className="mt-4">
-                  <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">Account</div>
+                  <div className="text-[10px] uppercase tracking-wider text-white/60 mb-1.5">
+                    Account
+                  </div>
                   <div className="grid grid-cols-1 gap-1.5">
                     {[
-                      { label: "Settings", icon: Settings, onClick: () => callOrRoute(onOpenSettings, goSettings) },
-                      { label: "Support", icon: HelpCircle, onClick: () => callOrRoute(onOpenSupport, goSupport) },
+                      {
+                        label: "Settings",
+                        icon: Settings,
+                        onClick: () =>
+                          callOrRoute(onOpenSettings, goSettings),
+                      },
+                      {
+                        label: "Support",
+                        icon: HelpCircle,
+                        onClick: goSupport, // ✅ forced route
+                      },
                     ].map((l) => (
                       <button
                         key={l.label}
@@ -526,6 +653,13 @@ export default function DashboardNav({
                     ))}
                   </div>
                 </div>
+
+                {/* Optional: if caller wants to intercept support, still allow it */}
+                {typeof onOpenSupport === "function" && (
+                  <div className="mt-3 text-[11px] text-white/50">
+                    Support handler detected. Navigation still routes to /dashboard/support.
+                  </div>
+                )}
               </div>
             </div>
           </div>
