@@ -133,23 +133,63 @@ export function clearToken() {
  * Optional helper: clears token on tab close / BFCache restore.
  * Use once (e.g. in root layout client guard).
  */
+// ───────────────── Session token auto-clear (max coverage) ─────────────────
+//
+// Clears horizon_token when:
+// - tab/window closes or reloads
+// - page goes into BFCache / user navigates away (pagehide)
+// - app/tab backgrounds (visibilitychange -> hidden)
+// - browser freezes/discards tab (freeze)
+// Idempotent install so multiple guards won't double-listen.
+//
+let __autoClearInstalled = false;
+
 export function installSessionTokenAutoClear() {
   if (typeof window === "undefined") return () => {};
+
+  if (__autoClearInstalled) {
+    return () => {}; // already installed
+  }
+  __autoClearInstalled = true;
+
   const kill = () => clearToken();
 
   try {
-    // extra safety: nuke legacy persisted token on first run
+    // extra safety: nuke any legacy persisted token on install
     localStorage.removeItem(TOKEN_KEY);
   } catch {}
 
-  window.addEventListener("pagehide", kill);
-  window.addEventListener("beforeunload", kill);
+  // Best overall “goodbye” event (close/reload/nav/BFCache)
+  window.addEventListener("pagehide", kill, { capture: true });
+
+  // Still useful on many desktops
+  window.addEventListener("beforeunload", kill, { capture: true });
+
+  // Mobile/Safari: when tab/app goes background
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.visibilityState === "hidden") kill();
+    },
+    { capture: true }
+  );
+
+  // Chrome/Edge page lifecycle: discard/freeze
+  (document as any).addEventListener?.("freeze", kill, { capture: true });
 
   return () => {
-    window.removeEventListener("pagehide", kill);
-    window.removeEventListener("beforeunload", kill);
+    __autoClearInstalled = false;
+    window.removeEventListener("pagehide", kill, { capture: true } as any);
+    window.removeEventListener("beforeunload", kill, { capture: true } as any);
+    document.removeEventListener(
+      "visibilitychange",
+      kill as any,
+      { capture: true } as any
+    );
+    (document as any).removeEventListener?.("freeze", kill, { capture: true });
   };
 }
+
 
 /* ───────────────────────── Errors/Fetch ───────────────────────── */
 
