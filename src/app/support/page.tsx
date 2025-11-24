@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useMemo, useState, type ReactNode } from "react";
-import Nav from "@/app/dashboard/dashboardnav";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -39,7 +38,11 @@ type Topic =
 type Priority = "Normal" | "High" | "Urgent";
 
 const TOPICS: { value: Topic; label: string; icon: ReactNode }[] = [
-  { value: "Deposits & Add Money", label: "Deposits & Add Money", icon: <Landmark className="h-4 w-4" /> },
+  {
+    value: "Deposits & Add Money",
+    label: "Deposits & Add Money",
+    icon: <Landmark className="h-4 w-4" />,
+  },
   { value: "Transfers", label: "Transfers", icon: <SendHorizonal className="h-4 w-4" /> },
   { value: "Cards", label: "Cards", icon: <CreditCard className="h-4 w-4" /> },
   { value: "Account & KYC", label: "Account & KYC", icon: <FileText className="h-4 w-4" /> },
@@ -137,17 +140,17 @@ export default function SupportPage() {
 
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
-      <Nav userName="Support" />
+      {/* ✅ header/nav removed */}
 
-      <section className="pt-[100px] container-x pb-24">
+      <section className="pt-8 md:pt-10 container-x pb-24">
         <div className="max-w-5xl mx-auto">
-          {/* Back */}
+          {/* Back → landing page */}
           <div className="flex items-center gap-3 mb-6">
             <Link
-              href="/dashboard/dashboard"
+              href="/"
               className="inline-flex items-center gap-2 text-white/70 hover:text-white"
             >
-              <ArrowLeft className="h-5 w-5" /> Back to dashboard
+              <ArrowLeft className="h-5 w-5" /> Back to home
             </Link>
           </div>
 
@@ -155,7 +158,9 @@ export default function SupportPage() {
           <div className="rounded-3xl border border-white/20 bg-gradient-to-br from-[#101826] to-[#0B0F14] p-6 md:p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h1 className="text-xl md:text-2xl font-semibold">Horizon Support</h1>
+                <h1 className="text-xl md:text-2xl font-semibold">
+                  Horizon Support
+                </h1>
                 <p className="text-white/70 mt-1">
                   We’re here to help. Browse quick fixes or reach the Helpdesk.
                 </p>
@@ -186,8 +191,11 @@ export default function SupportPage() {
             {/* Non-clickable phone display */}
             <div className="mt-3 text-sm text-white/70 flex items-center gap-2">
               <Phone className="h-4 w-4" />
-              Support line: <span className="text-white">{SUPPORT_PHONE_DISPLAY}</span>
-              <span className="text-xs text-white/50">(WhatsApp preferred)</span>
+              Support line:{" "}
+              <span className="text-white">{SUPPORT_PHONE_DISPLAY}</span>
+              <span className="text-xs text-white/50">
+                (WhatsApp preferred)
+              </span>
             </div>
 
             {/* Quick contact cards (only WA + email) */}
@@ -216,9 +224,12 @@ export default function SupportPage() {
             <div className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-4 text-sm flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-300 shrink-0 mt-0.5" />
               <div>
-                <div className="font-medium text-amber-200">Include a reference ID when possible</div>
+                <div className="font-medium text-amber-200">
+                  Include a reference ID when possible
+                </div>
                 <div className="text-white/80 mt-1">
-                  If your issue relates to a deposit or transfer, paste the reference ID so we can resolve it faster.
+                  If your issue relates to a deposit or transfer, paste the
+                  reference ID so we can resolve it faster.
                 </div>
               </div>
             </div>
@@ -281,10 +292,13 @@ export default function SupportPage() {
                 <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm flex items-start gap-3">
                   <CheckCircle2 className="h-5 w-5 text-emerald-300 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-emerald-200 font-medium">Complaint sent</div>
+                    <div className="text-emerald-200 font-medium">
+                      Complaint sent
+                    </div>
                     <div className="text-white/80 mt-1">
-                      Reference <span className="font-mono">{sentRef}</span>. 
-                      If you need faster help, message us on WhatsApp.
+                      Reference{" "}
+                      <span className="font-mono">{sentRef}</span>. If you need
+                      faster help, message us on WhatsApp.
                     </div>
                   </div>
                 </div>
@@ -295,7 +309,10 @@ export default function SupportPage() {
                   label="Topic"
                   value={topic}
                   onChange={(v) => setTopic(v as Topic)}
-                  options={TOPICS.map((t) => ({ value: t.value, label: t.label }))}
+                  options={TOPICS.map((t) => ({
+                    value: t.value,
+                    label: t.label,
+                  }))}
                   icon={TOPICS.find((t) => t.value === topic)?.icon}
                 />
 
@@ -333,7 +350,10 @@ export default function SupportPage() {
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <div className="text-xs text-white/60">
                     Helpdesk:{" "}
-                    <a className="underline hover:text-white" href={`mailto:${SUPPORT_EMAIL}`}>
+                    <a
+                      className="underline hover:text-white"
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                    >
                       {SUPPORT_EMAIL}
                     </a>{" "}
                     • WhatsApp:{" "}
@@ -355,7 +375,10 @@ export default function SupportPage() {
                         ? "opacity-60 cursor-not-allowed"
                         : ""
                     }`}
-                    style={{ backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)" }}
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(90deg,#00B4D8,#00E0FF)",
+                    }}
                   >
                     {sending ? "Sending…" : "Submit complaint"}
                   </button>
@@ -366,7 +389,8 @@ export default function SupportPage() {
 
           {/* Footer-ish */}
           <div className="mt-8 text-center text-xs text-white/50">
-            © {new Date().getFullYear()} Horizon Bank • Support via WhatsApp or email.
+            © {new Date().getFullYear()} Horizon Bank • Support via WhatsApp or
+            email.
           </div>
         </div>
       </section>
@@ -432,10 +456,14 @@ function AccordionItem({
       >
         <div>
           <div className="text-sm font-medium">{title}</div>
-          {badge && <div className="text-xs text-white/60 mt-0.5">{badge}</div>}
+          {badge && (
+            <div className="text-xs text-white/60 mt-0.5">{badge}</div>
+          )}
         </div>
         <ChevronDown
-          className={`h-4 w-4 opacity-80 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-4 w-4 opacity-80 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
         />
       </button>
       {open && (
@@ -490,7 +518,9 @@ function FieldInput(props: {
           } ${icon ? "pl-11" : "pl-4"} pr-4 py-3 text-base shadow-inner`}
         />
       </div>
-      {invalidMsg && <span className="text-xs text-rose-300">{invalidMsg}</span>}
+      {invalidMsg && (
+        <span className="text-xs text-rose-300">{invalidMsg}</span>
+      )}
     </label>
   );
 }
