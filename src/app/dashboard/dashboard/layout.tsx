@@ -1,13 +1,7 @@
+// app/dashboard/layout.tsx  (client)
 "use client";
+import { SessionTokenGuard } from "@/components/SessionTokenGuard";
 
-import { useEffect } from "react";
-import { installAutoLogoutOnClose } from "@/libs/api";
-
-export function SessionTokenGuard({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    const cleanup = installAutoLogoutOnClose();
-    return cleanup;
-  }, []);
-
-  return <>{children}</>;
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return <SessionTokenGuard>{children}</SessionTokenGuard>;
 }
