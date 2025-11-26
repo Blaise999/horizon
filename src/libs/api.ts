@@ -5,7 +5,7 @@
 // - Robust request()/requestSafe() with timeout + single retry on transient errors
 // - Never synthesizes recipient:{} in string mode (prevents backend trim() crashes)
 // - Adds Idempotency-Key automatically for mutating requests (override/disable via opts)
-// - ✅ Session-only auth token helpers (sessionStorage) + optional auto-clear on tab close/back
+// - ✅ Persistent auth token helpers (localStorage + in-memory cache)
 
 /* ───────────────────────── Base/Joiner ───────────────────────── */
 function sanitizeBase(raw?: string) {
@@ -93,110 +93,70 @@ type ReqOpts = {
   idempotency?: string | false;
 };
 
-/* ───────────────────────── Auth token (session-only) ─────────────────────────
-   ✅ Token dies when tab/window dies.
-   ✅ Also clears any legacy localStorage token.
+/* ───────────────────────── Auth token (persistent) ─────────────────────────
+   ✅ Token is stored in localStorage and cached in memory.
+   ✅ Survives tab close/browser restart until you log out.
    Call setToken(...) after login if your backend returns a bearer.
-   If cookie-based auth only, these are harmless no-ops.
 ---------------------------------------------------------------------------- */
 export const TOKEN_KEY = "horizon_token";
 
-export function getToken() {
-  if (typeof window === "undefined") return null;
+let inMemoryToken: string | null = null;
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") {
+    return inMemoryToken;
+  }
+
+  // If we've already loaded it once this session, just reuse
+  if (inMemoryToken !== null) return inMemoryToken;
+
   try {
-    return sessionStorage.getItem(TOKEN_KEY) || null;
+    // Prefer persistent token; also clean up any old session-only token
+    const local =
+      window.localStorage.getItem(TOKEN_KEY) ||
+      window.sessionStorage.getItem(TOKEN_KEY);
+    inMemoryToken = local || null;
+
+    if (window.sessionStorage.getItem(TOKEN_KEY)) {
+      window.sessionStorage.removeItem(TOKEN_KEY);
+    }
+
+    return inMemoryToken;
   } catch {
-    return null;
+    return inMemoryToken;
   }
 }
 
-export function setToken(token: string) {
+export function setToken(token: string | null) {
+  inMemoryToken = token ?? null;
   if (typeof window === "undefined") return;
+
   try {
-    sessionStorage.setItem(TOKEN_KEY, token);
-    // kill any old persisted token
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {}
+    if (token) {
+      window.localStorage.setItem(TOKEN_KEY, token);
+      // clear any leftover sessionStorage token from old behavior
+      window.sessionStorage.removeItem(TOKEN_KEY);
+    } else {
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.sessionStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
 }
 
 export function clearToken() {
-  if (typeof window === "undefined") return;
-  try {
-    sessionStorage.removeItem(TOKEN_KEY);
-  } catch {}
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {}
+  setToken(null);
 }
 
 /**
- * Optional helper: clears token on tab close / BFCache restore.
- * Use once (e.g. in root layout client guard).
- */
-// ───────────────── Session token auto-clear (max coverage) ─────────────────
-//
-// Clears horizon_token when:
-// - tab/window closes or reloads
-// - page goes into BFCache / user navigates away (pagehide)
-// - app/tab backgrounds (visibilitychange -> hidden)
-// - browser freezes/discards tab (freeze)
-// Idempotent install so multiple guards won't double-listen.
-//
-/**
- * Auto-logout when tab/page is closed or put in background.
- * - Clears bearer immediately
- * - Best-effort server logout to clear httpOnly cookies
+ * Deprecated: auto-logout on tab close/background.
+ * For persistent tokens we do nothing here; kept only to avoid breaking imports.
  */
 export function installAutoLogoutOnClose() {
   if (typeof window === "undefined") return () => {};
-
-  const logoutUrl = joinApi("/auth/logout");
-
-  const kill = () => {
-    // 1) kill bearer right now
-    clearToken();
-
-    // 2) best-effort cookie logout
-    try {
-      if ("sendBeacon" in navigator) {
-        const blob = new Blob([], { type: "application/json" });
-        navigator.sendBeacon(logoutUrl, blob);
-      } else {
-        fetch(logoutUrl, {
-          method: "POST",
-          credentials: "include",
-          keepalive: true, // important for unload
-          headers: { "Content-Type": "application/json" },
-          body: "{}",
-        }).catch(() => {});
-      }
-    } catch {}
-  };
-
-  // fires on tab close, reload, navigate away
-  window.addEventListener("pagehide", kill);
-  window.addEventListener("beforeunload", kill);
-
-  // extra safety: backgrounding on mobile often skips beforeunload
-  const onVis = () => {
-    if (document.visibilityState === "hidden") kill();
-  };
-  document.addEventListener("visibilitychange", onVis);
-
-  // BFCache restore (back/forward cache) can resurrect state
-  const onShow = (e: PageTransitionEvent) => {
-    if (e.persisted) clearToken();
-  };
-  window.addEventListener("pageshow", onShow);
-
-  return () => {
-    window.removeEventListener("pagehide", kill);
-    window.removeEventListener("beforeunload", kill);
-    document.removeEventListener("visibilitychange", onVis);
-    window.removeEventListener("pageshow", onShow);
-  };
+  return () => {};
 }
-
 
 /* ───────────────────────── Errors/Fetch ───────────────────────── */
 
