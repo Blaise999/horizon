@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import { GlobalClientErrorLogger } from "@/components/GlobalClientErrorLogger";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,6 +32,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-svh bg-[#0E131B] text-[#E6EEF7]`}
       >
+        {/* 🔥 logs client-side crashes (including iPhone/Safari) to /api/client-error */}
+        <GlobalClientErrorLogger />
+
         {/* No NavBrand/AppFooter here — the page renders its own header/footer */}
         <Providers>
           {/* ✅ satisfies Next’s Suspense requirement for client hooks at build time */}
