@@ -19,12 +19,12 @@ import {
 import Logo from "@/components/logo";
 import { Button, Input, Label } from "@/components/primitives";
 import { PATHS } from "@/config/routes";
-import API, { API_BASE } from "@/libs/api";
+import API, { API_BASE, setToken } from "@/libs/api"; // ⬅️ import setToken
 import { registerThisDevice } from "@/libs/fp";
 
 /* -------------------------------------------------------------------------- */
 /*                         Horizon • Unified Login (BE-first)                 */
-/*  - Email+Password -> /auth/login (sets cookies)                            */
+/*  - Email+Password -> /auth/login (sets cookies + accessToken)              */
 /*  - OTP gate -> /auth/otp/send + /auth/otp/verify                           */
 /*  - After OTP:                                                              */
 /*      -> route from SERVER TRUTH only (no localStorage gating)              */
@@ -63,6 +63,9 @@ export default function LoginPage() {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
 
+  // Small UX: show “finalizing / signing you in…” after OTP verify kicks off
+  const [finalizingSession, setFinalizingSession] = useState(false);
+
   // refs for OTP inputs so we can auto-advance/focus
   const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -94,9 +97,15 @@ export default function LoginPage() {
   const handleEmailLogin = async () => {
     setErr("");
     setLoading(true);
+    setFinalizingSession(false);
     try {
-      // 1) Login (sets httpOnly cookies)
+      // 1) Login (sets httpOnly cookies + accessToken in body)
       const res = await API.login(email, password);
+
+      // ⬅️ store bearer token for this device
+      if (res?.accessToken) {
+        setToken(res.accessToken);
+      }
 
       // optional UX hints
       try {
@@ -105,7 +114,7 @@ export default function LoginPage() {
         localStorage.setItem("hb_logged_in", "1");
       } catch {}
 
-      // 2) Force OTP step
+      // 2) Force OTP step (email verification)
       setOtpOpen(true);
       await sendOtpNow(email);
 
@@ -135,6 +144,7 @@ export default function LoginPage() {
 
   async function verifyOtpNow() {
     setOtpError("");
+    setFinalizingSession(false);
     const code = otp.join("");
     if (code.length !== OTP_LEN) {
       setOtpError("Enter the 6-digit code.");
@@ -142,9 +152,11 @@ export default function LoginPage() {
     }
     setOtpVerifying(true);
     try {
-      // 1) Verify (sets cookies)
+      // 1) Verify email OTP
       await API.verifyOtp(email, code);
-      setOtpOpen(false);
+
+      // Show a nicer “finalizing” UX while we pull server truth + route
+      setFinalizingSession(true);
 
       // 2) Pull SERVER TRUTH and route only from it (ignore localStorage flags)
       const user = await API.meUser();
@@ -157,11 +169,14 @@ export default function LoginPage() {
         (user?.setupPercent ?? 0) >= 100 ||
         !!user?.hasPin;
 
+      setOtpOpen(false);
+
       router.replace(
         isOnboarded ? PATHS.DASHBOARD_HOME : PATHS.DASHBOARD_ONBOARDING
       );
     } catch (e: any) {
       setOtpError(e?.message || "Verification failed.");
+      setFinalizingSession(false);
     } finally {
       setOtpVerifying(false);
       setLoading(false);
@@ -239,9 +254,14 @@ export default function LoginPage() {
   async function handlePinLogin() {
     setQuickError("");
     setPinLoading(true);
+    setFinalizingSession(false);
     try {
-      // Use API wrapper (sets cookies with credentials)
-      await API.pinLogin(pinEmail, pin);
+      // Use API wrapper (sets cookies and returns accessToken)
+      const res = await API.pinLogin(pinEmail, pin);
+
+      if (res?.accessToken) {
+        setToken(res.accessToken);
+      }
 
       // Confirm from server and route using the same logic as OTP
       const user = await API.meUser();
@@ -263,6 +283,7 @@ export default function LoginPage() {
   async function handleFingerprintLogin() {
     setQuickError("");
     setFingerprintLoading(true);
+    setFinalizingSession(false);
     try {
       // Ask server for WebAuthn assertion options
       const optRes = await fetch(`${BASE}/webauthn/assertion/options`, {
@@ -304,6 +325,11 @@ export default function LoginPage() {
       if (!resultRes.ok)
         throw new Error(result?.error || "Fingerprint login failed.");
 
+      // If backend also returns an accessToken here, store it
+      if (result?.accessToken) {
+        setToken(result.accessToken);
+      }
+
       // Route from server truth
       const user = await API.meUser();
       const isOnboarded =
@@ -325,6 +351,9 @@ export default function LoginPage() {
   }
 
   /* --------------------------------- UI ----------------------------------- */
+  const anyQuickAuthLoading = pinLoading || fingerprintLoading;
+  const showGlobalVeil = anyQuickAuthLoading || finalizingSession;
+
   return (
     <div className="min-h-svh bg-[#0E131B] text-[#E6EEF7] flex flex-col">
       {/* Header */}
@@ -351,13 +380,15 @@ export default function LoginPage() {
           transition={{ duration: 0.35 }}
           className="w-full max-w-md rounded-2xl border border-white/10 bg-[#101826] p-8 shadow-[0_10px_30px_rgba(0,0,0,0.45)] relative"
         >
-          {/* Subtle loading veil when quick auth is in progress */}
-          {(pinLoading || fingerprintLoading) && (
+          {/* Subtle loading veil when quick auth OR finalizing session is in progress */}
+          {showGlobalVeil && (
             <div className="absolute inset-0 rounded-2xl bg-black/30 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 z-10">
               <Loader2 className="h-6 w-6 animate-spin text-[#00E0FF]" />
               <p className="text-[11px] text-[#C8D6EA] flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                Securely verifying your device…
+                {finalizingSession
+                  ? "Finalizing your secure Horizon session…"
+                  : "Securely verifying your device…"}
               </p>
             </div>
           )}
@@ -376,7 +407,7 @@ export default function LoginPage() {
                   : "bg-white/5 text-[#9BB0C6]"
               }`}
               onClick={() => setUsePin(false)}
-              disabled={pinLoading || fingerprintLoading}
+              disabled={anyQuickAuthLoading || finalizingSession}
             >
               Email Login
             </button>
@@ -387,7 +418,7 @@ export default function LoginPage() {
                   : "bg-white/5 text-[#9BB0C6]"
               }`}
               onClick={() => setUsePin(true)}
-              disabled={pinLoading || fingerprintLoading}
+              disabled={anyQuickAuthLoading || finalizingSession}
             >
               Quick Login
             </button>
@@ -407,7 +438,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="bg-white/5 border-white/10"
-                    disabled={loading}
+                    disabled={loading || finalizingSession}
                   />
                 </div>
               </div>
@@ -423,13 +454,13 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="pr-10 bg-white/5 border-white/10"
-                      disabled={loading}
+                      disabled={loading || finalizingSession}
                     />
                     <button
                       type="button"
                       onClick={() => setShowPw(!showPw)}
                       className="absolute right-2 text-[#9BB0C6] hover:text-[#E6EEF7]"
-                      disabled={loading}
+                      disabled={loading || finalizingSession}
                     >
                       {showPw ? (
                         <EyeOff className="h-4 w-4" />
@@ -453,7 +484,7 @@ export default function LoginPage() {
                         )
                       }
                       className="text-[11px] text-[#00E0FF] hover:underline"
-                      disabled={loading}
+                      disabled={loading || finalizingSession}
                     >
                       Forgot your password?
                     </button>
@@ -464,7 +495,7 @@ export default function LoginPage() {
               {err && <div className="text-rose-400 text-xs">{err}</div>}
 
               <Button
-                disabled={!canLogin}
+                disabled={!canLogin || finalizingSession}
                 onClick={handleEmailLogin}
                 className="mt-2 gap-2 w-full justify-center text-[#0E131B]"
                 style={{
@@ -490,7 +521,7 @@ export default function LoginPage() {
                 <button
                   className="text-[#00E0FF] hover:underline"
                   onClick={() => router.push(PATHS.CREATE_ACCOUNT)}
-                  disabled={loading}
+                  disabled={loading || finalizingSession}
                 >
                   Create one
                 </button>
@@ -512,7 +543,7 @@ export default function LoginPage() {
                     value={pinEmail}
                     onChange={(e) => setPinEmail(e.target.value)}
                     className="bg-white/5 border-white/10"
-                    disabled={pinLoading || fingerprintLoading}
+                    disabled={anyQuickAuthLoading || finalizingSession}
                   />
                 </div>
               </div>
@@ -531,7 +562,7 @@ export default function LoginPage() {
                       setPin(e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
                     className="pl-10 text-center tracking-[.4em] bg-white/5 border-white/10"
-                    disabled={pinLoading || fingerprintLoading}
+                    disabled={anyQuickAuthLoading || finalizingSession}
                   />
                 </div>
               </div>
@@ -544,7 +575,9 @@ export default function LoginPage() {
 
               <Button
                 onClick={handlePinLogin}
-                disabled={!canPinLogin || pinLoading || fingerprintLoading}
+                disabled={
+                  !canPinLogin || anyQuickAuthLoading || finalizingSession
+                }
                 className="mt-1 w-full justify-center text-[#0E131B] relative overflow-hidden"
                 style={{
                   backgroundImage: "linear-gradient(90deg,#00B4D8,#00E0FF)",
@@ -582,7 +615,8 @@ export default function LoginPage() {
                   !biometricEnabled ||
                   !pinEmail ||
                   fingerprintLoading ||
-                  pinLoading
+                  pinLoading ||
+                  finalizingSession
                 }
                 title={
                   biometricEnabled
@@ -629,6 +663,9 @@ export default function LoginPage() {
               {otp.map((v, i) => (
                 <Input
                   key={i}
+                  ref={(el) => {
+                    otpRefs.current[i] = el;
+                  }} // ⬅️ wire refs so auto-advance works
                   maxLength={1}
                   inputMode="numeric"
                   value={v}
@@ -636,9 +673,20 @@ export default function LoginPage() {
                   onKeyDown={(e) => handleOtpKeyDown(i, e)}
                   onPaste={handleOtpPaste}
                   className="w-10 h-12 text-center text-lg bg-white/5 border-white/10"
+                  disabled={otpVerifying}
                 />
               ))}
             </div>
+
+            {/* nicer feedback while verifying / finalizing */}
+            {otpVerifying && (
+              <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-[#9BB0C6]">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>
+                  Checking your code and securing your Horizon session…
+                </span>
+              </div>
+            )}
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-[#9BB0C6] flex items-center gap-1">
@@ -651,7 +699,7 @@ export default function LoginPage() {
                 <Button
                   variant="ghost"
                   onClick={() => sendOtpNow(email)}
-                  disabled={otpSending || resendIn > 0}
+                  disabled={otpSending || resendIn > 0 || otpVerifying}
                 >
                   {otpSending ? "Sending…" : "Resend"}
                 </Button>
