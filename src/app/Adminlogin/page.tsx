@@ -1,10 +1,21 @@
 // app/admin/login/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, LogIn, Eye, EyeOff, Mail, KeyRound } from "lucide-react";
-import { request } from "@/libs/api"; // << use your real client
+import { request, setToken, clearToken } from "@/libs/api";
+
+type LoginResponse = {
+  ok?: boolean;
+  accessToken: string;
+  refreshToken?: string;
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+  };
+};
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -14,30 +25,41 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // When you hit the admin login page, don't reuse any old bearer token
+  useEffect(() => {
+    clearToken();
+  }, []);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
 
-    if (!email || !pw) return setErr("Please enter your email and password.");
+    if (!email || !pw) {
+      setErr("Please enter your email and password.");
+      return;
+    }
 
     try {
       setLoading(true);
 
-      // 1) Call real backend (issues httpOnly cookies)
-      const res = await request<{
-        ok: boolean;
-        user?: { id: string; email: string; role: string };
-      }>("/auth/login", {
+      // Call real backend (sets httpOnly cookies + returns accessToken)
+      const res = await request<LoginResponse>("/auth/login", {
         method: "POST",
         body: { email, password: pw },
       });
 
-      // 2) Must be admin
+      // Must be admin
       if (!res?.user || res.user.role !== "admin") {
-        return setErr("This account is not an admin.");
+        // ensure no stale admin token lingers
+        clearToken();
+        setErr("This account is not an admin.");
+        return;
       }
 
-      // 3) Go to Admin
+      // Keep frontend bearer token in sync with admin session
+      setToken(res.accessToken);
+
+      // Go to Admin dashboard
       router.replace("/Admin");
     } catch (e: any) {
       setErr(e?.message || "Login failed. Please try again.");
@@ -48,7 +70,10 @@ export default function AdminLoginPage() {
 
   return (
     <main className="min-h-svh bg-[#0E131B] text-white grid place-items-center p-6">
-      <form onSubmit={onSubmit} className="w-full max-w-md rounded-3xl border border-white/15 bg-white/[0.05] p-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-md">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-md rounded-3xl border border-white/15 bg-white/[0.05] p-6 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-md"
+      >
         <div className="flex items-center gap-3 mb-4">
           <ShieldCheck className="text-emerald-300" />
           <div className="text-lg font-semibold">Horizon — Admin Login</div>
@@ -102,7 +127,7 @@ export default function AdminLoginPage() {
         </button>
 
         <p className="mt-3 text-xs text-white/60">
-          Uses secure httpOnly cookies; no localStorage token.
+          Uses secure cookies plus a short-lived in-app token for admin access.
         </p>
       </form>
     </main>
