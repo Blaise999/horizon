@@ -1,10 +1,10 @@
-// app/dashboard/page.tsx — Horizon (INTELLIGENT TXNS + INSIGHTS)
+// app/dashboard/page.tsx — Horizon (INTELLIGENT TXNS + INSIGHTS) — MOBILE-FIRST ARRANGEMENT
+// - Cleaner mobile layout + better spacing + sticky section headers
 // - Direction-aware counterparty resolution (origin vs beneficiary)
 // - Deep fallbacks for name/handle/bank last4, incl. provider meta blocks
 // - Provider names never appear as bold title; they live in subtitle only
 // - Real 30d stats, YTD, cleaner UI
 // - Avatar upload: Cloudinary unsigned → save to /users/me/profile → live preview (+ optional nav refresh event)
-// - Modernized layout: Vertical stack for better mobile experience, enhanced cards with subtle gradients, improved typography, added total assets, sparkline placeholder for crypto, refined quick actions and insights
 
 "use client";
 
@@ -100,6 +100,17 @@ function formatAddress(a?: Address) {
   return [a.street1, a.street2, cityState, a.postalCode, a.country]
     .filter(Boolean)
     .join(" • ");
+}
+
+function addressToString(v: any): string | undefined {
+  if (!v) return undefined;
+  if (typeof v === "string") return v.trim() || undefined;
+  if (typeof v === "object") {
+    // Could be AddressSchema or something similar
+    const s = formatAddress(v as Address);
+    return s || undefined;
+  }
+  return String(v).trim() || undefined;
 }
 
 function num(v: any, def = 0): number {
@@ -199,8 +210,6 @@ function maskPhone(phone?: string) {
   if (d.length < 4) return undefined;
   return `•••${d.slice(-4)}`;
 }
-
-/** Mask a crypto / on-chain address into something human-ish */
 function maskAddr(addr?: string) {
   if (!addr) return undefined;
   const s = String(addr).trim();
@@ -233,7 +242,6 @@ function totalsLastNDays(rows: TxnRowUnified[], days = 30) {
 /* Direction-aware counterparty picker                                        */
 /* -------------------------------------------------------------------------- */
 function pickParty(input: any, direction: "sent" | "received") {
-  // Prefer direction-correct explicit party
   const sender =
     input?.origin ??
     input?.from ??
@@ -264,7 +272,7 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.beneficiaryName,
     input?.meta?.originName,
     input?.meta?.name,
-    input?.merchant // legacy, but only if not provider-ish (we’ll filter later)
+    input?.merchant
   );
 
   const partyHandle = firstNonEmpty(
@@ -287,12 +295,11 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.wise?.name
   );
 
-  // Crypto / on-chain address (direction-aware but also with broad fallbacks)
-  const partyAddress = firstNonEmpty(
+  const partyAddressRaw = firstNonEmpty(
     party?.cryptoAddress,
-    party?.address,
+    addressToString(party?.address),
     input?.recipient?.cryptoAddress,
-    input?.recipient?.address,
+    addressToString(input?.recipient?.address),
     input?.crypto?.toAddress,
     input?.crypto?.address,
     input?.meta?.crypto?.toAddress,
@@ -314,7 +321,12 @@ function pickParty(input: any, direction: "sent" | "received") {
     input?.meta?.bank?.account
   );
 
-  return { partyName, partyHandle, bankLast4, partyAddress };
+  return {
+    partyName,
+    partyHandle,
+    bankLast4,
+    partyAddress: partyAddressRaw,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -328,7 +340,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
     input?.amount ??
     input?.meta?.amount ??
     0;
-  let amt = num(rawAmt);
+  const amt = num(rawAmt);
 
   let direction: "sent" | "received";
   if (typeof input?.direction === "string") {
@@ -338,22 +350,20 @@ function normalizeTx(input: any): TxnRowUnified | null {
     direction = amt < 0 ? "sent" : "received";
   }
 
-  // Make sure we store signed USD (− sent / + received)
-  const signed =
-    direction === "sent" ? -Math.abs(Math.abs(amt)) : Math.abs(Math.abs(amt));
+  // Store signed USD (− sent / + received)
+  const signed = direction === "sent" ? -Math.abs(amt) : Math.abs(amt);
 
   // 2) Rail
   const rail =
     (input?.rail as string | undefined) ||
     (input?.meta?.rail as string | undefined);
 
-  // 3) Counterparty (direction-aware) — includes crypto address
+  // 3) Counterparty (direction-aware)
   const { partyName, partyHandle, bankLast4, partyAddress } = pickParty(
     input,
     direction
   );
 
-  // Name: drop provider-like strings
   const nameHuman =
     partyName && !isProviderLabel(partyName) ? partyName : undefined;
 
@@ -368,24 +378,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
 
   const last4 = bankLast4 ? String(bankLast4).slice(-4) : undefined;
 
-  // Try primary address from pickParty
   let addressMasked = partyAddress ? maskAddr(partyAddress) : undefined;
-  // Extra fallback for any stray address fields on crypto txns
-  if (!addressMasked) {
-    const fallbackAddr = firstNonEmpty(
-      input?.recipient?.cryptoAddress,
-      input?.recipient?.address,
-      input?.crypto?.toAddress,
-      input?.crypto?.address,
-      input?.meta?.crypto?.toAddress,
-      input?.meta?.crypto?.address,
-      input?.meta?.cryptoTo,
-      input?.meta?.toAddress,
-      input?.toAddress,
-      input?.address
-    );
-    if (fallbackAddr) addressMasked = maskAddr(fallbackAddr);
-  }
 
   // 4) Title (never provider/rail)
   const merchantRaw =
@@ -397,7 +390,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
     nameHuman ||
     merchantHuman ||
     (handle && !isProviderLabel(handle) ? handle : undefined) ||
-    addressMasked || // use masked address as a human-ish title
+    addressMasked ||
     (last4 ? `Acct ••••${last4}` : "Unknown");
 
   // 5) Subtitle — prefer a different signal from title
@@ -416,40 +409,23 @@ function normalizeTx(input: any): TxnRowUnified | null {
     subtitle &&
     subtitle.trim().toLowerCase() === title.trim().toLowerCase()
   ) {
-    // avoid duplicates (e.g. when title is already the handle)
     subtitle =
       railPretty && railPretty.toLowerCase() !== title.toLowerCase()
         ? railPretty
         : undefined;
   }
 
-  // If title is still "Unknown" on a crypto rail, force an address-based title
+  // If title is still "Unknown" on crypto rail, force address-based title
   if (
     title === "Unknown" &&
     rail &&
     String(rail).toLowerCase().startsWith("crypto")
   ) {
-    const addr = firstNonEmpty(
-      partyAddress,
-      input?.recipient?.cryptoAddress,
-      input?.recipient?.address,
-      input?.crypto?.toAddress,
-      input?.crypto?.address,
-      input?.meta?.crypto?.toAddress,
-      input?.meta?.crypto?.address,
-      input?.meta?.cryptoTo,
-      input?.meta?.toAddress,
-      input?.toAddress,
-      input?.address
-    );
-    if (addr) {
-      const masked = maskAddr(addr);
-      if (masked) {
-        title = masked;
-        if (!subtitle || isProviderLabel(subtitle)) {
-          subtitle = railPretty;
-        }
-      }
+    const addr = partyAddress;
+    const masked = addr ? maskAddr(addr) : undefined;
+    if (masked) {
+      title = masked;
+      if (!subtitle || isProviderLabel(subtitle)) subtitle = railPretty;
     }
   }
 
@@ -473,7 +449,7 @@ function normalizeTx(input: any): TxnRowUnified | null {
   const crypto =
     cryptoRow && {
       symbol: cryptoRow.symbol || "BTC",
-      amount: Math.abs(num(cryptoRow.amount ?? cryptoRow.qty)), // coin units, positive
+      amount: Math.abs(num(cryptoRow.amount ?? cryptoRow.qty)),
       usdAtExecution: num(cryptoRow.usdAtExecution ?? cryptoRow.price),
       side:
         (cryptoRow.side as any) ||
@@ -519,11 +495,9 @@ function normalizeTx(input: any): TxnRowUnified | null {
 /* Aggregations for Insights (monthly + YTD) */
 /* -------------------------------------------------------------------------- */
 type MonthKey = `${number}-${number}`;
-
 function toMonthKey(d: Date): MonthKey {
   return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}` as MonthKey;
 }
-
 function aggregateByMonth(rows: TxnRowUnified[]) {
   const map = new Map<MonthKey, { sent: number; received: number }>();
   for (const r of rows) {
@@ -536,7 +510,6 @@ function aggregateByMonth(rows: TxnRowUnified[]) {
   }
   return map;
 }
-
 function aggregateYtd(rows: TxnRowUnified[], ref = new Date()) {
   const year = ref.getUTCFullYear();
   let sent = 0,
@@ -548,6 +521,25 @@ function aggregateYtd(rows: TxnRowUnified[], ref = new Date()) {
     else received += r.amount;
   }
   return { sent: +sent.toFixed(2), received: +received.toFixed(2) };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Money formatters                                                           */
+/* -------------------------------------------------------------------------- */
+const USD0 = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+const USD2 = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+});
+function fmtUsd(v: number, compact = false) {
+  const n = Number(v) || 0;
+  if (compact && Math.abs(n) >= 1000) return USD0.format(n);
+  return USD2.format(n);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -641,7 +633,7 @@ export default function DashboardPage() {
         setCheckingBalance(Number(user.balances?.checking || 0));
         setSavingsBalance(Number(user.balances?.savings || 0));
 
-        // 🔥 Build holdings from per-coin user.balances fields
+        // Build holdings from per-coin user.balances fields
         const balances = user.balances || {};
         const holdings: Record<string, number> = {};
 
@@ -650,7 +642,6 @@ export default function DashboardPage() {
           if (Number.isFinite(n) && n > 0) holdings[id] = n;
         };
 
-        // Per-coin fields (units)
         addHolding("bitcoin", balances.cryptoBTC);
         addHolding("ethereum", balances.cryptoETH);
         addHolding("usd-coin", balances.cryptoUSDC);
@@ -662,7 +653,6 @@ export default function DashboardPage() {
         addHolding("binancecoin", balances.cryptoBNB);
         addHolding("dogecoin", balances.cryptoDOGE);
 
-        // Optional legacy map: balances.cryptoHoldings = { bitcoin: { amount }, eth: { amount } }
         const legacyHoldings = balances.cryptoHoldings;
         if (legacyHoldings && typeof legacyHoldings === "object") {
           Object.entries(legacyHoldings).forEach(([id, val]) => {
@@ -701,9 +691,7 @@ export default function DashboardPage() {
           const normalized = raw
             .map((row) => normalizeTx(row))
             .filter(Boolean) as TxnRowUnified[];
-          normalized.sort(
-            (a, b) => +new Date(b.date) - +new Date(a.date)
-          );
+          normalized.sort((a, b) => +new Date(b.date) - +new Date(a.date));
           setTxns(normalized);
         } catch (e) {
           console.warn("txns fetch error", e);
@@ -711,9 +699,7 @@ export default function DashboardPage() {
 
         // Notifications / activities
         try {
-          const acts = await request<{ items: any[] }>(
-            "/users/me/activities"
-          );
+          const acts = await request<{ items: any[] }>("/users/me/activities");
           const list = Array.isArray(acts?.items) ? acts.items : [];
           if (list.length) {
             setActivities(
@@ -725,7 +711,7 @@ export default function DashboardPage() {
             );
           }
         } catch {
-          // ignore; empty notifications panel
+          // ignore
         }
       } catch {
         router.replace("/dashboard/loginpage");
@@ -738,11 +724,7 @@ export default function DashboardPage() {
     [checkingBalance, savingsBalance]
   );
 
-  // 🔢 Live crypto pricing for ALL holdings
-  const assetIds = useMemo(
-    () => Object.keys(cryptoHoldings),
-    [cryptoHoldings]
-  );
+  const assetIds = useMemo(() => Object.keys(cryptoHoldings), [cryptoHoldings]);
 
   const { perAsset, loading: priceLoading } = useLiveCrypto({
     ids: assetIds.length ? assetIds : ["bitcoin"],
@@ -750,7 +732,6 @@ export default function DashboardPage() {
     pollMs: 15000,
   });
 
-  // Total crypto USD across all held assets
   const totalCryptoUsd = useMemo(() => {
     if (!perAsset) return 0;
     return Object.values(perAsset).reduce((sum, asset: any) => {
@@ -759,7 +740,6 @@ export default function DashboardPage() {
     }, 0);
   }, [perAsset]);
 
-  // Portfolio-wide 24h % change (value-weighted across assets)
   const portfolioChange24h = useMemo(() => {
     if (!perAsset) return null;
     if (!totalCryptoUsd) return null;
@@ -785,8 +765,8 @@ export default function DashboardPage() {
 
   const byMonth = useMemo(() => aggregateByMonth(txns), [txns]);
   const ytd = useMemo(() => aggregateYtd(txns), [txns]);
+  const last30 = useMemo(() => totalsLastNDays(txns, 30), [txns]);
 
-  // 🔹 Monthly net trend for mini charts (last 6 months)
   const monthlyTrend = useMemo(() => {
     const points: { label: string; net: number; ts: number }[] = [];
     byMonth.forEach((val, key) => {
@@ -802,7 +782,6 @@ export default function DashboardPage() {
     return points.slice(-6).map(({ label, net }) => ({ label, net }));
   }, [byMonth]);
 
-  // 🔹 Category breakdown (absolute volumes)
   const categorySummary = useMemo(() => {
     const map = new Map<string, number>();
     txns.forEach((t) => {
@@ -819,7 +798,6 @@ export default function DashboardPage() {
     return arr;
   }, [txns]);
 
-  // 🔹 Rail split (PayPal / Zelle / ACH etc)
   const railSummary = useMemo(() => {
     const map = new Map<string, { sent: number; received: number }>();
     txns.forEach((t) => {
@@ -873,6 +851,7 @@ export default function DashboardPage() {
     d.setUTCMonth(d.getUTCMonth() + 1);
     setFocusMonth(d);
   }
+
   const monthLabel = useMemo(
     () =>
       focusMonth.toLocaleString(undefined, {
@@ -887,7 +866,6 @@ export default function DashboardPage() {
     fileInputRef.current?.click();
   }
 
-  // Avatar change → Cloudinary → save → broadcast
   async function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -897,7 +875,7 @@ export default function DashboardPage() {
       const url = await uploadAvatarUnsigned(file, {
         folder: "horizon/avatars",
       });
-      await saveAvatar(url); // PATCH /users/me/profile { avatarUrl: url }
+      await saveAvatar(url);
       setProfileAvatar(url);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
@@ -970,7 +948,6 @@ export default function DashboardPage() {
     }
   }
 
-  // 🔗 When a user taps a transaction, deep-link into /Transfer/success
   function handleOpenTxn(t: TxnRowUnified) {
     const ref = t.ref || t.id;
 
@@ -985,7 +962,7 @@ export default function DashboardPage() {
         };
         localStorage.setItem("last_transfer", JSON.stringify(payload));
       } catch {
-        // swallow; Success page has its own fallbacks
+        // ignore
       }
     }
 
@@ -995,6 +972,8 @@ export default function DashboardPage() {
   }
 
   const visualCardLast4 = last4FromCard(cardNumber, cardLast4);
+
+  const hasNotifs = activities?.length > 0;
 
   return (
     <main className="min-h-svh bg-[#0E131B] text-white">
@@ -1012,18 +991,49 @@ export default function DashboardPage() {
         {...({ avatarUrl: profileAvatar || undefined } as any)}
       />
 
-      {/* Hero / balances */}
-      <section className="pt-[100px] container-x">
-        <div className="max-w-4xl mx-auto space-y-8">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#101826]/80 to-[#0B0F14]/80 p-8 shadow-2xl backdrop-blur-lg ring-1 ring-white/5">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-white/60">Welcome back,</div>
-                <div className="text-2xl font-semibold mt-1">
+      {/* HERO */}
+      <section className="pt-[88px] sm:pt-[100px] container-x">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#101826]/80 to-[#0B0F14]/80 p-6 sm:p-8 shadow-2xl backdrop-blur-lg ring-1 ring-white/5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm text-white/60">
+                  Welcome back,
+                </div>
+                <div className="text-xl sm:text-2xl font-semibold mt-1 truncate">
                   {userName || "User"}
                 </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <Chip label="Fiat" value={fmtUsd(totalFiat, true)} />
+                  <Chip
+                    label="Crypto"
+                    value={priceLoading ? "…" : fmtUsd(totalCryptoUsd, true)}
+                  />
+                  <Chip
+                    label="30d net"
+                    value={fmtUsd(last30.net, true)}
+                    tone={last30.net >= 0 ? "pos" : "neg"}
+                  />
+                  {typeof portfolioChange24h === "number" &&
+                    isFinite(portfolioChange24h) && (
+                      <Chip
+                        label="24h"
+                        value={`${portfolioChange24h >= 0 ? "▲" : "▼"} ${Math.abs(
+                          portfolioChange24h
+                        ).toFixed(2)}%`}
+                        tone={portfolioChange24h >= 0 ? "pos" : "neg"}
+                      />
+                    )}
+                </div>
               </div>
-              <div className="h-10 w-10 rounded-full overflow-hidden bg.white/10 bg-white/10 border border-white/20">
+
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="shrink-0 h-11 w-11 rounded-2xl overflow-hidden bg-white/10 border border-white/20 grid place-items-center hover:bg-white/15 transition-all"
+                title="Profile & settings"
+              >
                 {profileAvatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1032,46 +1042,79 @@ export default function DashboardPage() {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <User size={20} className="text-white/50 m-auto mt-2.5" />
+                  <User size={20} className="text-white/55" />
                 )}
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <div className="text-xs sm:text-sm text-white/70">
+                Total assets
+              </div>
+              <div className="text-4xl sm:text-5xl font-bold mt-1 tracking-tight tabular-nums">
+                {fmtUsd(totalAssets, true)}
+              </div>
+              <div className="text-xs text-white/50 mt-2">
+                Combined balances across fiat and crypto accounts.
               </div>
             </div>
-            <div className="mt-6 text-sm text-white/70">Total assets</div>
-            <div className="text-5xl font-bold mt-1 tracking-tight">
-              ${totalAssets.toLocaleString()}
-            </div>
-            <div className="text-xs text-white/50 mt-2">
-              Combined balances across fiat and crypto accounts.
-            </div>
-            <div className="flex gap-4 text-xs text-white/60 mt-3">
-              <span>Fiat: ${totalFiat.toLocaleString()}</span>
-              <span>•</span>
-              <span>Crypto: ${totalCryptoUsd.toLocaleString()}</span>
-            </div>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <button
-                className="px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 flex items-center gap-2 shadow-lg transition-all text-sm"
-                onClick={openQuickAddMoney}
-              >
-                <Plus size={14} /> Add money
-              </button>
-              <button
-                className="px-4 py-2.5 rounded-full bg-[#00E0FF]/10 hover:bg-[#00E0FF]/15 border border-[#00E0FF]/30 flex items-center gap-2 shadow-lg transition-all text-sm"
-                onClick={openQuickTransfer}
-              >
+
+            <div className="mt-6 sm:mt-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-3">
+              <PrimaryButton onClick={openQuickTransfer} kind="primary">
                 <ArrowUpRight size={14} /> Transfer
-              </button>
-              <button
-                className="px-4 py-2.5 rounded-full bg-white/10 hover:bg.white/15 bg-white/10 hover:bg-white/15 border border-white/20 flex items-center gap-2 shadow-lg transition-all text-sm"
-                onClick={openInsights}
-              >
+              </PrimaryButton>
+              <PrimaryButton onClick={openQuickAddMoney}>
+                <Plus size={14} /> Add money
+              </PrimaryButton>
+              <PrimaryButton onClick={openInsights}>
                 <BarChart3 size={14} /> Insights
-              </button>
+              </PrimaryButton>
+              <PrimaryButton onClick={openTransactions}>
+                <ArrowRight size={14} /> Activity
+              </PrimaryButton>
             </div>
           </div>
 
-          {/* Accounts row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* ACCOUNTS — carousel on mobile, grid on desktop */}
+          <div className="sm:hidden">
+            <div className="text-sm text-white/70 mb-3">Accounts</div>
+            <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
+              <div className="snap-center min-w-[280px]">
+                <AccountCard
+                  label="Checking"
+                  balance={checkingBalance}
+                  color="#00E0FF"
+                  icon={<Wallet size={22} />}
+                  subtitle="Everyday spending"
+                  onClick={openCardsManager}
+                />
+              </div>
+              <div className="snap-center min-w-[280px]">
+                <AccountCard
+                  label="Savings"
+                  balance={savingsBalance}
+                  color="#33D69F"
+                  icon={<PiggyBank size={22} />}
+                  subtitle="4.5% APY"
+                  onClick={openCardsManager}
+                />
+              </div>
+              <div className="snap-center min-w-[280px]">
+                <CryptoCard
+                  label="Crypto"
+                  color="#F7931A"
+                  icon={<Bitcoin size={22} />}
+                  totalUsd={totalCryptoUsd}
+                  change24h={portfolioChange24h ?? undefined}
+                  assetsCount={assetIds.length}
+                  loading={priceLoading}
+                  onClick={openCrypto}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden sm:grid grid-cols-3 gap-4">
             <AccountCard
               label="Checking"
               balance={checkingBalance}
@@ -1102,39 +1145,61 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Quick actions */}
-      <section className="container-x mt-10">
-        <div className="text-sm text-white/70 mb-4">Quick actions</div>
-        <div className="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory">
-          <ActionTile
-            icon={<ArrowUpRight size={28} />}
-            label="Transfer"
-            onClick={openQuickTransfer}
-          />
-          <ActionTile
-            icon={<Plus size={28} />}
-            label="Add money"
-            onClick={openQuickAddMoney}
-          />
-          <ActionTile
-            icon={<CreditCard size={28} />}
-            label="Pay bills"
-            onClick={openPayBills}
-          />
-          <ActionTile
-            icon={<BarChart3 size={28} />}
-            label="Insights"
-            onClick={openInsights}
-          />
+      {/* QUICK ACTIONS — 2x2 on mobile, row on desktop */}
+      <section className="container-x mt-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm text-white/70">Quick actions</div>
+            <button
+              onClick={() => setShowNotifications(true)}
+              className="text-xs text-white/60 hover:text-white/80 inline-flex items-center gap-2"
+            >
+              <Bell size={14} />
+              Notifications
+              {hasNotifs && (
+                <span className="ml-1 inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <ActionTile
+              icon={<ArrowUpRight size={26} />}
+              label="Transfer"
+              onClick={openQuickTransfer}
+            />
+            <ActionTile
+              icon={<Plus size={26} />}
+              label="Add money"
+              onClick={openQuickAddMoney}
+            />
+            <ActionTile
+              icon={<CreditCard size={26} />}
+              label="Pay bills"
+              onClick={openPayBills}
+            />
+            <ActionTile
+              icon={<BarChart3 size={26} />}
+              label="Insights"
+              onClick={openInsights}
+            />
+          </div>
         </div>
       </section>
 
-      {/* Insights section */}
-      <section className="container-x mt-10">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl ring-1 ring-white/5">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold">Spending &amp; income</h2>
-            <div className="flex items-center gap-2 text-xs">
+      {/* INSIGHTS GLANCE */}
+      <section className="container-x mt-8">
+        <div className="max-w-4xl mx-auto rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl ring-1 ring-white/5">
+          <div className="flex items-start sm:items-center justify-between gap-3 mb-5">
+            <div>
+              <h2 className="text-lg font-semibold">Spending &amp; income</h2>
+              <p className="text-xs text-white/55 mt-1">
+                Month view for deeper context — last 30d summary stays accurate
+                no matter what month you view.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs shrink-0">
               <button
                 onClick={prevMonth}
                 className="px-2 py-1 rounded-full bg-white/10 border border-white/20 hover:bg-white/15"
@@ -1156,7 +1221,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-3 gap-3">
             <InsightStat
               label="Sent (this month)"
               value={fmtMoney(monthSentRecv.sent)}
@@ -1175,94 +1240,114 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-4 mt-6">
-            <StatCard
-              k="YTD Sent"
-              v={fmtMoney(ytd.sent)}
-              sub="Year-to-date total outflows"
+          <div className="grid sm:grid-cols-3 gap-3 mt-4">
+            <SummaryCard
+              label="Sent (last 30d)"
+              value={fmtMoney(last30.sent)}
+              tone="sent"
             />
+            <SummaryCard
+              label="Received (last 30d)"
+              value={fmtMoney(last30.received)}
+              tone="received"
+            />
+            <SummaryCard label="Net (last 30d)" value={fmtMoney(last30.net)} />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3 mt-4">
+            <StatCard k="YTD Sent" v={fmtMoney(ytd.sent)} sub="Year-to-date outflows" />
             <StatCard
               k="YTD Received"
               v={fmtMoney(ytd.received)}
-              sub="Year-to-date total inflows"
+              sub="Year-to-date inflows"
             />
           </div>
 
-          {/* Mini chart using monthly net trend */}
-          <div className="mt-6 pt-4 border-t border-white/10">
+          <div className="mt-5 pt-4 border-t border-white/10">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm text-white/70">Monthly net trend</div>
               {monthlyTrend.length > 0 && (
                 <div className="text-[11px] text-white/50">
-                  Last {monthlyTrend.length} months • Net inflow vs outflow
+                  Last {monthlyTrend.length} months
                 </div>
               )}
             </div>
             <MiniTrendChart points={monthlyTrend} />
           </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={openInsights}
+              className="text-sm text-[#00E0FF] hover:underline inline-flex items-center gap-2"
+            >
+              Open full insights <ArrowRight size={14} />
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* Recent Activity */}
-      <section className="container-x mt-10 pb-32">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Recent activity</h2>
-          <button
-            onClick={openTransactions}
-            className="text-sm text-[#00E0FF] hover:underline flex items-center gap-2 transition-all"
-          >
-            View all <ArrowRight size={14} />
-          </button>
-        </div>
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] divide-y divide-white/10 shadow-2xl ring-1 ring-white/5">
-          {txns.slice(0, 5).length === 0 ? (
-            <div className="p-8 text-center text-white/70">
-              No transactions yet.
-            </div>
-          ) : (
-            txns.slice(0, 5).map((t) => (
-              <TxnRow key={t.id} t={t} onClick={() => handleOpenTxn(t)} />
-            ))
-          )}
+      {/* RECENT ACTIVITY */}
+      <section className="container-x mt-8 pb-28">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Recent activity</h2>
+            <button
+              onClick={openTransactions}
+              className="text-sm text-[#00E0FF] hover:underline flex items-center gap-2 transition-all"
+            >
+              View all <ArrowRight size={14} />
+            </button>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.03] divide-y divide-white/10 shadow-2xl ring-1 ring-white/5 overflow-hidden">
+            {txns.length === 0 ? (
+              <div className="p-10 text-center text-white/70">
+                No transactions yet.
+              </div>
+            ) : (
+              txns.slice(0, 7).map((t) => (
+                <TxnRow key={t.id} t={t} onClick={() => handleOpenTxn(t)} />
+              ))
+            )}
+          </div>
+
+          {/* Bottom CTA strip for mobile */}
+          <div className="sm:hidden mt-4 grid grid-cols-2 gap-3">
+            <PrimaryButton onClick={openQuickTransfer} kind="primary">
+              <ArrowUpRight size={14} /> Transfer
+            </PrimaryButton>
+            <PrimaryButton onClick={openQuickAddMoney}>
+              <Plus size={14} /> Add money
+            </PrimaryButton>
+          </div>
         </div>
       </section>
 
-      {/* Floating Notifications button */}
+      {/* Floating Notifications button (mobile-friendly) */}
       <button
         onClick={() => setShowNotifications(true)}
         title="Notifications"
-        className="fixed right-5 bottom-5 h-12 w-12 rounded-full bg-white/10 border border-white/20 grid place-items-center shadow-2xl hover:bg-white/15 transition-all"
+        className="fixed right-4 bottom-4 z-[70] h-12 w-12 rounded-full bg-white/10 border border-white/20 grid place-items-center shadow-2xl hover:bg-white/15 transition-all"
       >
-        <Bell size={18} />
+        <div className="relative">
+          <Bell size={18} />
+          {hasNotifs && (
+            <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0E131B]" />
+          )}
+        </div>
       </button>
 
       {/* ----------------------------- MODALS ----------------------------- */}
-
-      <Sheet
-        open={showAccounts}
-        onClose={() => setShowAccounts(false)}
-        title="Accounts"
-      >
+      <Sheet open={showAccounts} onClose={() => setShowAccounts(false)} title="Accounts">
         <div className="space-y-4">
-          <InfoRow
-            icon={<Wallet size={18} />}
-            label="Checking"
-            value={`$${checkingBalance.toLocaleString()}`}
-          />
-          <InfoRow
-            icon={<PiggyBank size={18} />}
-            label="Savings"
-            value={`$${savingsBalance.toLocaleString()}`}
-          />
-          <InfoRow
-            icon={<Bitcoin size={18} />}
-            label="Crypto"
-            value={`$${totalCryptoUsd.toLocaleString()}`}
-          />
+          <div className="grid sm:grid-cols-3 gap-3">
+            <InfoRow icon={<Wallet size={18} />} label="Checking" value={fmtUsd(checkingBalance, true)} />
+            <InfoRow icon={<PiggyBank size={18} />} label="Savings" value={fmtUsd(savingsBalance, true)} />
+            <InfoRow icon={<Bitcoin size={18} />} label="Crypto" value={priceLoading ? "…" : fmtUsd(totalCryptoUsd, true)} />
+          </div>
 
-          <div className="h-px bg-white/20 my-3" />
+          <div className="h-px bg-white/20 my-2" />
 
-          {/* Virtual card + account numbers */}
           <div className="grid lg:grid-cols-[minmax(0,1.4fr),minmax(0,1fr)] gap-4">
             <VirtualCard
               label="Horizon virtual card"
@@ -1275,71 +1360,47 @@ export default function DashboardPage() {
                 Account details
               </div>
               <KeyVal k="Routing number" v={routingNumber || "—"} />
-              <KeyVal
-                k="Account number"
-                v={maskAccount(accountNumber) || "—"}
-              />
+              <KeyVal k="Account number" v={maskAccount(accountNumber) || "—"} />
               <KeyVal
                 k="Virtual card"
-                v={
-                  visualCardLast4
-                    ? `•••• •••• •••• ${visualCardLast4}`
-                    : "—"
-                }
+                v={visualCardLast4 ? `•••• •••• •••• ${visualCardLast4}` : "—"}
               />
             </div>
           </div>
 
-          <div className="pt-2">
-            <button
-              className="mt-3 inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20 shadow-md transition-all"
-              onClick={openCrypto}
-            >
-              <CreditCard size={18} /> Manage crypto
-            </button>
+          <div className="pt-2 flex flex-wrap gap-3">
+            <PrimaryButton onClick={openCrypto}>
+              <Bitcoin size={16} /> Manage crypto
+            </PrimaryButton>
+            <PrimaryButton onClick={() => setShowSecurity(true)}>
+              <Shield size={16} /> Security
+            </PrimaryButton>
           </div>
         </div>
       </Sheet>
 
-      <Sheet
-        open={showTransactions}
-        onClose={() => setShowTransactions(false)}
-        title="Transactions"
-      >
+      <Sheet open={showTransactions} onClose={() => setShowTransactions(false)} title="Transactions">
         <TransactionsPanel txns={txns} onOpenTxn={handleOpenTxn} />
       </Sheet>
 
-      <Sheet
-        open={showAnalytics}
-        onClose={() => setShowAnalytics(false)}
-        title="Spending insights"
-      >
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div className="space-y-5">
-            <StatCard
-              k="This month sent"
-              v={fmtMoney(monthSentRecv.sent)}
-              sub="Outflows this month"
-            />
+      <Sheet open={showAnalytics} onClose={() => setShowAnalytics(false)} title="Spending insights">
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="space-y-4">
+            <StatCard k="This month sent" v={fmtMoney(monthSentRecv.sent)} sub="Outflows this month" />
             <StatCard
               k="This month received"
               v={fmtMoney(monthSentRecv.received)}
               sub="Inflows this month"
             />
-            <StatCard
-              k="YTD net"
-              v={fmtMoney(ytd.received - ytd.sent)}
-              sub="Income − spend"
-            />
+            <StatCard k="YTD net" v={fmtMoney(ytd.received - ytd.sent)} sub="Income − spend" />
+
             <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-              <div className="text-base text.white/80 text-white/80 mb-3 font-semibold">
+              <div className="text-base text-white/80 mb-3 font-semibold">
                 Top categories
               </div>
               <ul className="space-y-3 text-sm text-white/70">
                 {categorySummary.slice(0, 4).length === 0 ? (
-                  <li className="text-xs text-white/50">
-                    No categorized spend yet.
-                  </li>
+                  <li className="text-xs text-white/50">No categorized spend yet.</li>
                 ) : (
                   categorySummary.slice(0, 4).map((c) => {
                     const pct =
@@ -1351,15 +1412,15 @@ export default function DashboardPage() {
                         key={c.category}
                         className="flex items-center justify-between gap-3"
                       >
-                        <div className="flex flex-col">
-                          <span className="text-sm text-white/85">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm text-white/85 truncate">
                             {c.category}
                           </span>
                           <span className="text-xs text-white/50">
                             {fmtMoney(c.total)} • {pct.toFixed(1)}%
                           </span>
                         </div>
-                        <div className="h-2 w-20 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-2 w-24 rounded-full bg-white/10 overflow-hidden shrink-0">
                           <div
                             className="h-full rounded-full bg-[#00E0FF]"
                             style={{
@@ -1374,6 +1435,7 @@ export default function DashboardPage() {
               </ul>
             </div>
           </div>
+
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
             <div className="text-base text-white/80 mb-2 font-semibold">
               Monthly trend
@@ -1382,28 +1444,24 @@ export default function DashboardPage() {
               Net inflows vs outflows across each recent month.
             </p>
             <div className="mt-4">
-              <MiniTrendChart points={monthlyTrend} height={120} />
+              <MiniTrendChart points={monthlyTrend} height={140} />
             </div>
           </div>
+
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
             <div className="text-base text-white/80 mb-2 font-semibold">
               Rail split
             </div>
             <p className="text-xs text-white/60 mb-3">
-              How your volume is distributed across ACH, wires, P2P and
-              crypto rails.
+              How your volume is distributed across ACH, wires, P2P and crypto rails.
             </p>
             {railSummary.slice(0, 5).length === 0 ? (
-              <div className="text-sm text-white/55">
-                No rail activity yet.
-              </div>
+              <div className="text-sm text-white/55">No rail activity yet.</div>
             ) : (
               <div className="space-y-3 text-sm text-white/80">
                 {railSummary.slice(0, 5).map((r) => {
                   const pct =
-                    totalRailVolume > 0
-                      ? (r.total / totalRailVolume) * 100
-                      : 0;
+                    totalRailVolume > 0 ? (r.total / totalRailVolume) * 100 : 0;
                   return (
                     <div key={r.rail} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
@@ -1433,37 +1491,19 @@ export default function DashboardPage() {
         </div>
       </Sheet>
 
-      <Sheet
-        open={showSecurity}
-        onClose={() => setShowSecurity(false)}
-        title="Security"
-      >
+      <Sheet open={showSecurity} onClose={() => setShowSecurity(false)} title="Security">
         <div className="space-y-4">
           <Row label="App PIN" action="Change" icon={<Lock size={18} />} />
-          <Row
-            label="Quick sign-in"
-            action="Manage"
-            icon={<Shield size={18} />}
-          />
-          <Row
-            label="Devices"
-            action="View"
-            icon={<Shield size={18} />}
-          />
+          <Row label="Quick sign-in" action="Manage" icon={<Shield size={18} />} />
+          <Row label="Devices" action="View" icon={<Shield size={18} />} />
         </div>
       </Sheet>
 
-      <Sheet
-        open={showSettings}
-        onClose={() => setShowSettings(false)}
-        title="Settings"
-      >
-        <div className="grid lg:grid-cols-[320px,1fr] gap-8">
-          {/* Profile quick card */}
+      <Sheet open={showSettings} onClose={() => setShowSettings(false)} title="Settings">
+        <div className="grid lg:grid-cols-[360px,1fr] gap-6">
+          {/* Profile card */}
           <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <div className="text-base text-white/80 mb-4 font-semibold">
-              Profile
-            </div>
+            <div className="text-base text-white/80 mb-4 font-semibold">Profile</div>
 
             <div className="flex items-center gap-4">
               <div className="relative">
@@ -1480,10 +1520,9 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Upload button / spinner */}
                 <button
                   onClick={avatarUploading ? undefined : handlePickAvatar}
-                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all"
+                  className="absolute -bottom-3 -right-3 h-10 w-10 rounded-2xl bg-white/15 border border-white/20 grid place-items-center shadow-md transition-all hover:bg-white/20"
                   title={avatarUploading ? "Uploading…" : "Change photo"}
                 >
                   {avatarUploading ? (
@@ -1494,13 +1533,18 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              <div className="text-base">
-                <div className="font-semibold">
+              <div className="min-w-0">
+                <div className="font-semibold truncate">
                   {profileFirst || "—"} {profileLast}
                 </div>
-                <div className="text-white/70">
+                <div className="text-white/70 truncate">
                   {profileEmail || "you@example.com"}
                 </div>
+                {profileHandle && (
+                  <div className="text-xs text-white/50 truncate mt-1">
+                    @{profileHandle.replace(/^@/, "")}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1520,11 +1564,7 @@ export default function DashboardPage() {
                 <Trash2 size={16} /> Remove photo
               </button>
             )}
-            {avatarError && (
-              <div className="mt-3 text-sm text-rose-300">
-                {avatarError}
-              </div>
-            )}
+            {avatarError && <div className="mt-3 text-sm text-rose-300">{avatarError}</div>}
 
             <div className="h-px bg-white/20 my-5" />
 
@@ -1568,7 +1608,32 @@ export default function DashboardPage() {
                 setValue={setProfileAddress}
               />
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-4 pt-1">
+                <button
+                  type="submit"
+                  className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20 inline-flex items-center gap-3 shadow-md transition-all"
+                >
+                  <Save size={16} /> Save changes
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 shadow-md transition-all hover:bg-white/[0.12]"
+                  onClick={() => setShowSettings(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Preferences + notifications */}
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+              <div className="text-base text-white/80 mb-4 font-semibold">
+                Preferences
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
                 <label className="text-sm grid gap-2">
                   <span className="text-white/70">Currency</span>
                   <select
@@ -1582,6 +1647,7 @@ export default function DashboardPage() {
                     <option value="NGN">NGN</option>
                   </select>
                 </label>
+
                 <label className="text-sm grid gap-2">
                   <span className="text-white/70">Timezone</span>
                   <input
@@ -1592,7 +1658,7 @@ export default function DashboardPage() {
                 </label>
               </div>
 
-              <div className="flex items-center gap-6 text-sm text-white/80">
+              <div className="mt-4 flex flex-col gap-3 text-sm text-white/80">
                 <label className="inline-flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1610,33 +1676,32 @@ export default function DashboardPage() {
                   Push notifications
                 </label>
               </div>
+            </div>
 
-              <div className="flex items-center gap-4 pt-2">
-                <button
-                  type="submit"
-                  className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/20 inline-flex items-center gap-3 shadow-md transition-all"
-                >
-                  <Save size={16} /> Save changes
-                </button>
-                <button
-                  type="button"
-                  className="px-5 py-3 rounded-2xl bg-white/10 border border-white/20 shadow-md transition-all"
-                  onClick={() => setShowSettings(false)}
-                >
-                  Cancel
-                </button>
+            <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+              <div className="text-base text-white/80 mb-3 font-semibold">
+                Shortcuts
               </div>
-            </form>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <PrimaryButton onClick={() => setShowAccounts(true)}>
+                  <Wallet size={16} /> Accounts
+                </PrimaryButton>
+                <PrimaryButton onClick={() => setShowSecurity(true)}>
+                  <Shield size={16} /> Security
+                </PrimaryButton>
+                <PrimaryButton onClick={openTransactions}>
+                  <CreditCard size={16} /> Transactions
+                </PrimaryButton>
+                <PrimaryButton onClick={() => setShowNotifications(true)}>
+                  <Bell size={16} /> Notifications
+                </PrimaryButton>
+              </div>
+            </div>
           </div>
         </div>
       </Sheet>
 
-      {/* Notifications */}
-      <Sheet
-        open={showNotifications}
-        onClose={() => setShowNotifications(false)}
-        title="Notifications"
-      >
+      <Sheet open={showNotifications} onClose={() => setShowNotifications(false)} title="Notifications">
         <NotificationsPanel activities={activities} />
       </Sheet>
     </main>
@@ -1644,6 +1709,55 @@ export default function DashboardPage() {
 }
 
 /* -------------------------------- subcomponents ------------------------------- */
+
+function Chip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "pos" | "neg";
+}) {
+  const toneClass =
+    tone === "pos"
+      ? "text-emerald-300 border-emerald-500/25 bg-emerald-500/10"
+      : tone === "neg"
+      ? "text-rose-300 border-rose-500/25 bg-rose-500/10"
+      : "text-white/70 border-white/15 bg-white/10";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${toneClass}`}
+    >
+      <span className="text-white/55">{label}</span>
+      <span className="font-semibold tabular-nums">{value}</span>
+    </span>
+  );
+}
+
+function PrimaryButton({
+  children,
+  onClick,
+  kind,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  kind?: "primary";
+}) {
+  const cls =
+    kind === "primary"
+      ? "bg-[#00E0FF]/12 hover:bg-[#00E0FF]/16 border-[#00E0FF]/30"
+      : "bg-white/10 hover:bg-white/15 border-white/20";
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2.5 rounded-2xl border flex items-center justify-center gap-2 shadow-lg transition-all text-sm ${cls}`}
+    >
+      {children}
+    </button>
+  );
+}
 
 function AccountCard({
   label,
@@ -1663,7 +1777,7 @@ function AccountCard({
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
+      className="w-full text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
         <div
@@ -1672,23 +1786,22 @@ function AccountCard({
         >
           {icon}
         </div>
-        <div className="flex flex-col">
-          <span>{label}</span>
+        <div className="flex flex-col min-w-0">
+          <span className="truncate">{label}</span>
           {subtitle && (
-            <span className="text-[11px] text-white/50 mt-0.5">
+            <span className="text-[11px] text-white/50 mt-0.5 truncate">
               {subtitle}
             </span>
           )}
         </div>
       </div>
-      <div className="text-3xl font-bold mt-4">
+      <div className="text-3xl font-bold mt-4 tabular-nums">
         ${balance.toLocaleString()}
       </div>
     </button>
   );
 }
 
-/** CryptoCard — Portfolio view: total USD + 24h change */
 function CryptoCard({
   label,
   color,
@@ -1733,7 +1846,7 @@ function CryptoCard({
   return (
     <button
       onClick={onClick}
-      className="text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
+      className="w-full text-left rounded-3xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-lg shadow-2xl hover:shadow-xl hover:bg-white/[0.05] transition-all duration-300 ring-1 ring-white/5"
     >
       <div className="flex items-center gap-3 text-sm text-white/70">
         <div
@@ -1745,7 +1858,7 @@ function CryptoCard({
         {label}
       </div>
 
-      <div className="text-3xl font-bold mt-4">
+      <div className="text-3xl font-bold mt-4 tabular-nums">
         {loading ? "…" : `$${totalUsd.toLocaleString()}`}
       </div>
 
@@ -1755,24 +1868,19 @@ function CryptoCard({
         {change24hValue !== null && (
           <span className={`${changeTone} mt-0.5`}>
             {change24hValue >= 0 ? "▲" : "▼"}{" "}
-            {change24hValue.toFixed(2)}% 24h
+            {Math.abs(change24hValue).toFixed(2)}% 24h
           </span>
         )}
       </div>
 
-      {/* Placeholder sparkline */}
       <div className="mt-4 h-8 w-full">
-        <svg
-          className="w-full h-full"
-          viewBox="0 0 100 20"
-          preserveAspectRatio="none"
-        >
+        <svg className="w-full h-full" viewBox="0 0 100 20" preserveAspectRatio="none">
           <path
             d="M0 18 Q25 10, 50 15 T100 5"
             fill="none"
             stroke={sparkStroke}
             strokeWidth="1.5"
-            opacity="0.5"
+            opacity="0.55"
           />
         </svg>
       </div>
@@ -1792,7 +1900,7 @@ function ActionTile({
   return (
     <button
       onClick={onClick}
-      className="rounded-3xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] transition-all duration-300 flex flex-col items-center justify-center py-6 px-4 min-w-[120px] backdrop-blur-lg shadow-2xl snap-center ring-1 ring-white/5"
+      className="rounded-3xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.05] transition-all duration-300 flex flex-col items-center justify-center py-5 px-4 backdrop-blur-lg shadow-2xl ring-1 ring-white/5"
     >
       <div className="h-12 w-12 rounded-full bg-white/10 border border-white/20 grid place-items-center mb-2">
         {icon}
@@ -1802,19 +1910,11 @@ function ActionTile({
   );
 }
 
-function StatCard({
-  k,
-  v,
-  sub,
-}: {
-  k: string;
-  v: string;
-  sub?: string;
-}) {
+function StatCard({ k, v, sub }: { k: string; v: string; sub?: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md shadow-2xl ring-1 ring-white/5">
       <div className="text-xs text-white/60">{k}</div>
-      <div className="text-lg font-bold mt-2">{v}</div>
+      <div className="text-lg font-bold mt-2 tabular-nums">{v}</div>
       {sub && <div className="text-xs text-white/50 mt-1">{sub}</div>}
     </div>
   );
@@ -1834,7 +1934,7 @@ function InsightStat({
   return (
     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md shadow-2xl ring-1 ring-white/5">
       <div className="text-xs text-white/60">{label}</div>
-      <div className="text-lg font-semibold mt-2">{value}</div>
+      <div className="text-lg font-semibold mt-2 tabular-nums">{value}</div>
       <div
         className={`text-xs mt-2 ${
           positive === undefined
@@ -1864,9 +1964,7 @@ function InfoRow({
       <div className="flex items-center gap-3 text-base text-white/90">
         {icon} {label}
       </div>
-      {value && (
-        <div className="text-xl font-bold">{value}</div>
-      )}
+      {value && <div className="text-xl font-bold tabular-nums">{value}</div>}
     </div>
   );
 }
@@ -1919,7 +2017,7 @@ function Sheet({
     <div className="fixed inset-0 z-[80]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
-        className="absolute right-0 top-0 h-full w-full sm:w-[640px] bg-[#0F1622] border-l border-white/20 shadow-[0_12px_48px_rgba(0,0,0,0.7)]"
+        className="absolute right-0 top-0 h-full w-full sm:w-[680px] bg-[#0F1622] border-l border-white/20 shadow-[0_12px_48px_rgba(0,0,0,0.7)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/20">
@@ -1932,9 +2030,7 @@ function Sheet({
             <X size={20} />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto h-[calc(100%-64px)]">
-          {children}
-        </div>
+        <div className="p-6 overflow-y-auto h-[calc(100%-64px)]">{children}</div>
       </div>
     </div>
   );
@@ -1998,33 +2094,29 @@ function TxnRow({
   const date = new Date(t.date);
   const railLabel = prettyRail(t.rail) ?? "Transfer";
 
-  // Hard guard: never show provider as title; use subtitle or "Unknown"
   const rawTitle = (t.title || "").trim();
   const titleText =
-    !rawTitle || isProviderLabel(rawTitle)
-      ? t.subtitle || "Unknown"
-      : rawTitle;
+    !rawTitle || isProviderLabel(rawTitle) ? t.subtitle || "Unknown" : rawTitle;
 
-  // Hide duplicate subtitle if it equals title (case-insensitive)
   const showSubtitle =
     t.subtitle &&
     t.subtitle.trim().toLowerCase() !== titleText.trim().toLowerCase();
 
   const hasCrypto =
-    !!t.crypto && Number.isFinite(Number(t.crypto.amount)) && t.crypto.amount !== 0;
+    !!t.crypto &&
+    Number.isFinite(Number(t.crypto.amount)) &&
+    t.crypto.amount !== 0;
   const cryptoSymbol = t.crypto?.symbol
     ? String(t.crypto.symbol).toUpperCase()
     : undefined;
 
-  const primaryCryptoAmount = hasCrypto
-    ? Math.abs(Number(t.crypto!.amount))
-    : null;
+  const primaryCryptoAmount = hasCrypto ? Math.abs(Number(t.crypto!.amount)) : null;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left flex items-center justify-between px-6 py-5 hover:bg-white/[0.04] transition-all"
+      className="w-full text-left flex items-center justify-between px-5 sm:px-6 py-4 sm:py-5 hover:bg-white/[0.04] transition-all"
     >
       <div className="flex items-center gap-4 min-w-0">
         <div
@@ -2034,15 +2126,11 @@ function TxnRow({
               : "bg-rose-500/15 border-rose-500/30 text-rose-300"
           }`}
         >
-          {isIncome ? (
-            <ArrowDownLeft size={18} />
-          ) : (
-            <ArrowUpRight size={18} />
-          )}
+          {isIncome ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
         </div>
 
         <div className="min-w-0">
-          <div className="text-base font-semibold truncate max-w-[220px] sm:max-w-[320px]">
+          <div className="text-base font-semibold truncate max-w-[220px] sm:max-w-[360px]">
             {titleText}
           </div>
 
@@ -2118,20 +2206,13 @@ function TransactionsPanel({
   return (
     <div className="space-y-6">
       <div className="grid sm:grid-cols-3 gap-4">
-        <SummaryCard
-          label="Sent (last 30d)"
-          value={fmtMoney(last30.sent)}
-          tone="sent"
-        />
+        <SummaryCard label="Sent (last 30d)" value={fmtMoney(last30.sent)} tone="sent" />
         <SummaryCard
           label="Received (last 30d)"
           value={fmtMoney(last30.received)}
           tone="received"
         />
-        <SummaryCard
-          label="Net (last 30d)"
-          value={fmtMoney(last30.net)}
-        />
+        <SummaryCard label="Net (last 30d)" value={fmtMoney(last30.net)} />
       </div>
 
       <div className="md:sticky md:top-[64px] z-[5] -mx-6 px-6 py-4 bg-[#0F1622]/95 backdrop-blur-md border-y border-white/20 shadow-md">
@@ -2154,11 +2235,7 @@ function TransactionsPanel({
                 </span>
               </div>
               {items.map((t) => (
-                <TxnRow
-                  key={t.id}
-                  t={t}
-                  onClick={() => onOpenTxn(t)}
-                />
+                <TxnRow key={t.id} t={t} onClick={() => onOpenTxn(t)} />
               ))}
             </div>
           ))
@@ -2186,7 +2263,7 @@ function SummaryCard({
   return (
     <div className="rounded-3xl border border-white/20 bg-white/[0.04] p-5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
       <div className="text-sm text-white/70">{label}</div>
-      <div className={`text-2xl font-bold mt-2 ${toneClass}`}>
+      <div className={`text-2xl font-bold mt-2 ${toneClass} tabular-nums`}>
         {value}
       </div>
     </div>
@@ -2201,16 +2278,8 @@ function TabPills({
   onChange: (v: "sent" | "received" | "all") => void;
 }) {
   const tabs = [
-    {
-      key: "all" as const,
-      label: "All",
-      icon: <CreditCard className="h-5 w-5" />,
-    },
-    {
-      key: "sent" as const,
-      label: "Sent",
-      icon: <ArrowUpRight className="h-5 w-5" />,
-    },
+    { key: "all" as const, label: "All", icon: <CreditCard className="h-5 w-5" /> },
+    { key: "sent" as const, label: "Sent", icon: <ArrowUpRight className="h-5 w-5" /> },
     {
       key: "received" as const,
       label: "Received",
@@ -2260,15 +2329,12 @@ function NotificationsPanel({ activities }: { activities: any[] }) {
           <div className="h-10 w-10 rounded-xl bg-white/10 border border-white/20 grid place-items-center text-emerald-300">
             <CheckCircle2 size={18} />
           </div>
-          <div className="flex-1">
-            <div className="text-sm font-medium">{a.title}</div>
-            <div className="text-xs text-white/60 mt-0.5">
-              {new Date(a.createdAt || Date.now()).toLocaleString()} •{" "}
-              {a.kind}
-              {a.type ? ` • ${a.type}` : ""}{" "}
-              {a.to ? ` • ${a.to}` : ""}{" "}
-              {a.amount ? ` • ${a.amount}` : ""}{" "}
-              {a.ref ? ` • Ref ${a.ref}` : ""}
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate">{a.title}</div>
+            <div className="text-xs text-white/60 mt-0.5 truncate">
+              {new Date(a.createdAt || Date.now()).toLocaleString()} • {a.kind}
+              {a.type ? ` • ${a.type}` : ""} {a.to ? ` • ${a.to}` : ""}{" "}
+              {a.amount ? ` • ${a.amount}` : ""} {a.ref ? ` • Ref ${a.ref}` : ""}
             </div>
             {a.meta && Object.keys(a.meta).length > 0 && (
               <div className="text-xs text-white/60 mt-1">
@@ -2319,9 +2385,7 @@ function VirtualCard({
         <div className="flex-1 space-y-1">
           <div className="text-[11px] text-white/50">Card number</div>
           <div className="font-mono tracking-[0.25em] text-sm">
-            {last4
-              ? `•••• •••• •••• ${last4}`
-              : "•••• •••• •••• ••••"}
+            {last4 ? `•••• •••• •••• ${last4}` : "•••• •••• •••• ••••"}
           </div>
         </div>
       </div>
@@ -2329,23 +2393,17 @@ function VirtualCard({
       <div className="mt-6 flex items-end justify-between text-xs relative">
         <div className="space-y-1">
           <div className="text-white/50 text-[11px]">Card holder</div>
-          <div className="text-sm font-semibold">
-            {holder || "Horizon User"}
-          </div>
+          <div className="text-sm font-semibold">{holder || "Horizon User"}</div>
         </div>
         <div className="space-y-1 text-right">
           <div className="text-white/50 text-[11px]">Expires</div>
-          <div className="font-mono text-sm tracking-[0.2em]">
-            12/28
-          </div>
+          <div className="font-mono text-sm tracking-[0.2em]">12/28</div>
         </div>
         <div className="text-right">
           <div className="text-[10px] text-white/60 uppercase">
             {network || "Visa"}
           </div>
-          <div className="text-lg font-semibold tracking-[0.15em]">
-            VISA
-          </div>
+          <div className="text-lg font-semibold tracking-[0.15em]">VISA</div>
         </div>
       </div>
     </div>
@@ -2399,18 +2457,12 @@ function MiniTrendChart({
 
   const areaD =
     `M ${xs[0]} ${h - padY} ` +
-    values
-      .map((_, i) => `L ${xs[i]} ${ys[i]}`)
-      .join(" ") +
+    values.map((_, i) => `L ${xs[i]} ${ys[i]}`).join(" ") +
     ` L ${xs[xs.length - 1]} ${h - padY} Z`;
 
   return (
     <div className="w-full" style={{ height }}>
-      <svg
-        viewBox={`0 0 ${width} ${h}`}
-        className="w-full h-[70%]"
-        preserveAspectRatio="none"
-      >
+      <svg viewBox={`0 0 ${width} ${h}`} className="w-full h-[70%]" preserveAspectRatio="none">
         <defs>
           <linearGradient id="trendFill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#00E0FF" stopOpacity="0.4" />
@@ -2446,13 +2498,6 @@ function maskAccount(acct?: string) {
   const d = acct.replace(/\s/g, "");
   if (d.length <= 4) return "••••";
   return `••••${d.slice(-4)}`;
-}
-function maskCard(card?: string) {
-  if (!card) return "";
-  const digits = card.replace(/\D/g, "");
-  if (!digits) return card;
-  const groups = digits.padStart(16, "•").match(/.{1,4}/g);
-  return (groups || []).join(" ");
 }
 
 function last4FromCard(card?: string, fallback?: string) {
