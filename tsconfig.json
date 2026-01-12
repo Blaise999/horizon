@@ -2,10 +2,13 @@
   "compilerOptions": {
     /* === Modern JS Target === */
     "target": "ES2022",
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
-
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext"
+    ],
     /* === React / Next specifics === */
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowJs": true,
@@ -13,22 +16,24 @@
     "noEmit": true,
     "incremental": true,
     "isolatedModules": true,
-
     /* === Type safety & performance === */
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-
     /* === Path alias (works with Next.js app dir) === */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     },
-
     /* === Next.js plugin support === */
-    "plugins": [{ "name": "next" }],
-
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     /* === Modern ESM friendliness === */
     "verbatimModuleSyntax": true
   },
@@ -36,7 +41,11 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
-, "src/app/dashboard/loginpage"  ],
-  "exclude": ["node_modules"]
+    ".next/types/**/*.ts",
+    "src/app/dashboard/loginpage",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
