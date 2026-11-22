@@ -16,7 +16,9 @@ export function supabase(): SupabaseClient {
   return cached;
 }
 
-export function throwOnError<T>(result: { data: T; error: { message: string } | null }): T {
+export function throwOnError<T>(result: { data: T; error: { message: string } | null }): T;
+export function throwOnError(result: { error: { message: string } | null }): void;
+export function throwOnError<T>(result: { data?: T; error: { message: string } | null }): T | undefined {
   if (result.error) throw new Error(result.error.message);
   return result.data;
 }
