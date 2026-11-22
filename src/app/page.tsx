@@ -1,788 +1,281 @@
 "use client";
 
-import { useRef, useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-
-// ✅ the ONLY header you import and render
-import Nav from "@/components/head";
-
-import BalanceCard from "@/components/BalanceCard";
-import FeatureCardUltra from "@/components/FeatureCard";
-import TrustStrip from "@/components/TrustStrip";
-import Testimonials from "@/components/Testimonials";
-import SupportDock from "@/components/SupportDock";
-// ⛔️ removed FigureCallout import (we no longer use it)
-// import FigureCallout from "@/components/FigureCallout";
-import { PATHS } from "@/config/routes";
-
 import {
+  Activity,
+  ArrowDownLeft,
   ArrowRight,
-  BarChart3,
-  CreditCard,
-  ShieldCheck,
-  Zap,
-  Globe2,
-  Plus,
+  ArrowUpRight,
   ArrowRightLeft,
-  QrCode,
-  Upload,
-  Wallet,
-  LineChart,
-  Globe,
-  ChevronDown,
+  Check,
   CheckCircle2,
-  Twitter,
-  Github,
-  Linkedin,
-  Youtube,
+  ChevronDown,
+  Clock3,
+  Fingerprint,
+  Globe2,
+  Layers3,
+  LockKeyhole,
+  Menu,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  WalletCards,
+  X,
 } from "lucide-react";
+import "./horizon-home.css";
 
-import FeatureSectionPro from "@/components/motion/FeatureSection";
-import OverlayHero, { type OverlaySlide } from "@/components/motion/OverlayHero";
-import FeatureCarouselPro from "@/components/FeatureCarouselPro";
-import StickyWhyMobile from "@/components/StickyWhyMobile";
-import ZigZagRow from "@/components/zigzagrow";
+type PreviewTab = "overview" | "transfers" | "activity";
 
-/* ──────────────────────────────────────────────────────────
-   SAFE PATH RESOLVER (uses PATHS if present, else fallback)
-────────────────────────────────────────────────────────── */
-const P = (key: string, fallback: string) =>
-  (PATHS as unknown as Record<string, string>)?.[key] ?? fallback;
+const navLinks = [
+  { label: "The platform", href: "#platform" },
+  { label: "Why Horizon", href: "#why-horizon" },
+  { label: "How it works", href: "#how-it-works" },
+  { label: "FAQs", href: "#faqs" },
+];
 
-/* ──────────────────────────────────────────────────────────
-   BACKGROUND FX
-────────────────────────────────────────────────────────── */
-function BackgroundFX() {
+function Wordmark({ light = false }: { light?: boolean }) {
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-50">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(1400px 1000px at 20% -10%, #0A1422 0%, rgba(10,20,34,0) 60%), radial-gradient(1200px 900px at 90% 10%, rgba(0,255,255,0.25) 0%, rgba(0,255,255,0) 50%), linear-gradient(180deg, #080C12 0%, #0C111A 100%)",
-        }}
-      />
-      <div className="absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_20%,transparent,rgba(0,0,0,.45))]" />
-      <div
-        className="absolute inset-0 opacity-[0.08] mix-blend-overlay"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-        }}
-      />
-    </div>
+    <Link href="/" className={`hz-wordmark${light ? " hz-wordmark-light" : ""}`} aria-label="Horizon home">
+      <span className="hz-brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 40 40" fill="none" focusable="false">
+          <circle cx="20" cy="20" r="18.75" stroke="currentColor" strokeWidth="1.5" opacity=".37" />
+          <path d="M8 24.5a12 12 0 0 1 24 0" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+          <path d="M7.5 25.5h25" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
+          <circle cx="20" cy="17.25" r="3.75" fill="currentColor" />
+        </svg>
+      </span>
+      <span>horizon<span className="hz-wordmark-dot">.</span></span>
+    </Link>
   );
 }
 
-/* ──────────────────────────────────────────────────────────
-   FLOATING ICON
-────────────────────────────────────────────────────────── */
-function FloatingIcon({
-  children,
-  className = "",
-  delay = 0,
-  distance = 12,
-  duration = 6.5,
-}: {
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-  distance?: number;
-  duration?: number;
-}) {
+function Header() {
+  const [open, setOpen] = useState(false);
   return (
-    <motion.div
-      aria-hidden
-      className={`absolute text-white/20 ${className}`}
-      initial={{ y: 0, opacity: 0 }}
-      animate={{ y: [0, -distance, 0], opacity: [0, 1, 1] }}
-      transition={{ duration, ease: "easeInOut", repeat: Infinity, delay }}
-    >
-      {children}
-    </motion.div>
+    <header className="hz-header">
+      <div className="hz-container hz-header-inner">
+        <Wordmark />
+        <nav className="hz-desktop-nav" aria-label="Main navigation">
+          {navLinks.map((item) => <a href={item.href} key={item.href}>{item.label}</a>)}
+        </nav>
+        <div className="hz-header-actions">
+          <Link href="/dashboard/loginpage" className="hz-login">Log in</Link>
+          <Link href="/create-account" className="hz-nav-cta">Get started <ArrowUpRight size={16} strokeWidth={2.3} /></Link>
+        </div>
+        <button
+          type="button"
+          className="hz-menu-toggle"
+          aria-label={open ? "Close navigation" : "Open navigation"}
+          aria-controls="hz-mobile-menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? <X size={23} /> : <Menu size={23} />}
+        </button>
+      </div>
+      {open && <div className="hz-mobile-menu" id="hz-mobile-menu">
+        <nav aria-label="Mobile navigation" className="hz-container">
+          {navLinks.map((item) => <a href={item.href} onClick={() => setOpen(false)} key={item.href}>{item.label}<ArrowUpRight size={17} /></a>)}
+          <div className="hz-mobile-actions">
+            <Link href="/dashboard/loginpage" onClick={() => setOpen(false)}>Log in</Link>
+            <Link href="/create-account" onClick={() => setOpen(false)}>Create account <ArrowRight size={17}/></Link>
+          </div>
+        </nav>
+      </div>}
+    </header>
   );
 }
 
-/* ──────────────────────────────────────────────────────────
-   PROGRESS RING
-────────────────────────────────────────────────────────── */
-function ProgressRing({
-  size = 40,
-  stroke = 6,
-  value = 0.42,
-}: {
-  size?: number;
-  stroke?: number;
-  value?: number;
-}) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const clamp = Math.max(0, Math.min(1, value));
-  const dash = clamp * c;
+function FlowChart({ light = false }: { light?: boolean }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="block shadow-[0_0_8px_rgba(0,224,255,0.4)]"
-      aria-label={`Progress ${Math.round(clamp * 100)}%`}
-    >
-      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,.15)" strokeWidth={stroke} fill="none" />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        stroke="url(#vault-grad)"
-        strokeLinecap="round"
-        strokeWidth={stroke}
-        fill="none"
-        strokeDasharray={`${dash} ${c - dash}`}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
+    <svg className={`hz-chart${light ? " hz-chart-light" : ""}`} viewBox="0 0 470 150" role="img" aria-label="Illustrative balance trend chart">
       <defs>
-        <linearGradient id="vault-grad" x1="0" x2="1" y1="0" y2="0">
-          <stop stopColor="#00E0FF" />
-          <stop offset="1" stopColor="#9B5CFF" />
+        <linearGradient id={light ? "hzAreaLight" : "hzArea"} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={light ? "#3abbaa" : "#8af5dc"} stopOpacity={light ? ".19" : ".28"}/>
+          <stop offset="100%" stopColor={light ? "#3abbaa" : "#8af5dc"} stopOpacity="0"/>
         </linearGradient>
       </defs>
+      {[25, 65, 105, 145].map((y) => <path key={y} d={`M0 ${y}H470`} className="hz-chart-grid" />)}
+      <path d="M0 123 C24 126 35 112 58 116 S100 139 125 105 S166 106 191 96 S228 105 250 76 S290 95 318 67 S352 74 380 50 S430 45 470 17 L470 150 L0 150Z" fill={`url(#${light ? "hzAreaLight" : "hzArea"})`} />
+      <path d="M0 123 C24 126 35 112 58 116 S100 139 125 105 S166 106 191 96 S228 105 250 76 S290 95 318 67 S352 74 380 50 S430 45 470 17" className="hz-chart-line" fill="none" />
+      <circle cx="470" cy="17" r="5" className="hz-chart-point" />
     </svg>
   );
 }
 
-/* ──────────────────────────────────────────────────────────
-   QUICK ACTIONS (now link out)
-────────────────────────────────────────────────────────── */
-function QuickActions() {
-  const Chip = ({ href, icon, label }: { href: string; icon: ReactNode; label: string }) => (
-    <Link
-      href={href}
-      className="shrink-0 snap-start px-4 py-3 rounded-xl bg-white/[.08] hover:bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-white/12 text-sm inline-flex items-center gap-2 transition-all hover:scale-105"
-    >
-      {icon}
-      <span>{label}</span>
-    </Link>
-  );
+function MiniLogo() {
+  return <span className="hz-mini-logo" aria-hidden="true"><span /></span>;
+}
 
-  const toCreate = P("CREATE_ACCOUNT", "/create-account");
-
+function HeroProduct() {
   return (
-    <div
-      className="mt-4 overflow-x-auto px-3 [scrollbar-width:none] [-ms-overflow-style:none]"
-      style={{
-        paddingLeft: "calc(env(safe-area-inset-left,0px) + 12px)",
-        paddingRight: "calc(env(safe-area-inset-right,0px) + 12px)",
-        scrollSnapType: "x mandatory",
-        scrollPaddingInline: 12,
-      }}
-    >
-      <div className="flex gap-2">
-        <Chip href={toCreate} icon={<Plus size={16} />} label="Add money" />
-        <Chip href={toCreate} icon={<ArrowRightLeft size={16} />} label="Transfer" />
-        <Chip href={toCreate} icon={<QrCode size={16} />} label="Pay QR" />
-        <Chip href={toCreate} icon={<Upload size={16} />} label="Top-up" />
+    <div className="hz-hero-visual" aria-label="Illustrative preview of the Horizon dashboard">
+      <div className="hz-orbit hz-orbit-one" aria-hidden="true" />
+      <div className="hz-orbit hz-orbit-two" aria-hidden="true" />
+      <div className="hz-app-window">
+        <div className="hz-window-top"><div className="hz-window-title"><MiniLogo /> <span>Overview</span></div><span className="hz-window-top-right"><span className="hz-status-dot"/> Your workspace</span></div>
+        <div className="hz-window-body">
+          <div className="hz-window-greeting"><span>Good morning, Alex <span aria-hidden="true">✳</span></span><span className="hz-window-date">Account preview</span></div>
+          <div className="hz-window-grid">
+            <div className="hz-balance-panel">
+              <div className="hz-balance-head"><span>Combined account balance</span><span className="hz-balance-mark"><WalletCards size={16}/></span></div>
+              <div className="hz-balance-number">$24,680<span>.50</span></div>
+              <div className="hz-balance-sub"><span className="hz-positive"><ArrowUpRight size={13} /> Sample view</span><span>USD accounts</span></div>
+              <div className="hz-balance-chart"><FlowChart /></div>
+              <div className="hz-chart-dates"><span>JAN</span><span>FEB</span><span>MAR</span><span>APR</span><span>MAY</span><span>JUN</span></div>
+            </div>
+            <div className="hz-window-side">
+              <div className="hz-quick-tile"><span className="hz-quick-icon"><ArrowUpRight size={18}/></span><span>Transfer request</span><strong>Start new <ArrowRight size={15}/></strong></div>
+              <div className="hz-small-account"><span>Savings</span><div>$8,420<span>.00</span></div><span className="hz-account-sub">Illustrative balance</span><div className="hz-account-decor" /></div>
+            </div>
+          </div>
+          <div className="hz-window-list-head"><span>Recent activity</span><span>View all <ArrowUpRight size={13}/></span></div>
+          <div className="hz-activity-line"><span className="hz-activity-icon hz-activity-in"><ArrowDownLeft size={17}/></span><span className="hz-activity-label"><strong>Balance adjustment</strong><small>Example entry · Today</small></span><strong className="hz-activity-amount">+$1,250.00</strong></div>
+          <div className="hz-activity-line"><span className="hz-activity-icon hz-activity-out"><ArrowUpRight size={17}/></span><span className="hz-activity-label"><strong>Transfer request</strong><small>Example · Awaiting review</small></span><strong className="hz-activity-amount">−$320.00</strong></div>
+        </div>
       </div>
+      <div className="hz-floating-card" aria-hidden="true">
+        <span className="hz-floating-card-top"><MiniLogo/><span>HORIZON</span></span>
+        <div className="hz-floating-sun" />
+        <span className="hz-floating-card-bottom">A new perspective<br/>on your finances.</span>
+      </div>
+      <div className="hz-floating-note"><span className="hz-floating-note-icon"><Check size={15}/></span><span><strong>More clarity.</strong><small>Less financial noise.</small></span></div>
+      <div className="hz-visual-disclaimer">Product illustration · sample data</div>
     </div>
   );
 }
 
-/* ──────────────────────────────────────────────────────────
-   FX TICKER
-────────────────────────────────────────────────────────── */
-function FxTicker() {
-  const [v, setV] = useState(0.01);
-  useEffect(() => {
-    const id = setInterval(() => {
-      setV((p) => {
-        const next = p + (Math.random() - 0.5) * 0.01;
-        return Math.max(-0.04, Math.min(0.04, +next.toFixed(2)));
-      });
-    }, 3000);
-    return () => clearInterval(id);
-  }, []);
-  const up = v >= 0;
+function SectionEyebrow({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
+  return <div className={`hz-eyebrow${light ? " hz-eyebrow-light" : ""}`}><span className="hz-eyebrow-square" />{children}</div>;
+}
 
+function OverviewBento() {
+  return <div className="hz-bento-preview hz-bento-overview-preview" aria-hidden="true">
+    <div className="hz-bento-bar"><MiniLogo/><span>My accounts</span><span className="hz-bento-bar-dots"><i/><i/><i/></span></div>
+    <div className="hz-bento-account-row"><span><small>Checking</small><strong>$16,260.50</strong></span><span className="hz-account-icon"><WalletCards size={20}/></span></div>
+    <div className="hz-bento-account-row"><span><small>Savings</small><strong>$8,420.00</strong></span><span className="hz-account-icon hz-account-icon-green"><Layers3 size={20}/></span></div>
+    <div className="hz-bento-bottom-line"><span>All your accounts, at a glance</span><span>USD <ChevronDown size={13}/></span></div>
+  </div>;
+}
+
+function RequestBento() {
+  return <div className="hz-request-stack" aria-hidden="true">
+    <div className="hz-request-ring hz-ring-one"/><div className="hz-request-ring hz-ring-two"/>
+    <div className="hz-request-card"><div className="hz-request-card-icon"><ArrowUpRight size={23}/></div><span>Transfer request</span><strong>$1,280.00</strong><div className="hz-request-divider"/><span className="hz-request-pill"><Clock3 size={12}/> Pending review</span></div>
+  </div>;
+}
+
+function FeatureBento() {
   return (
-    <div className="flex items-center gap-2 text-xs" aria-live="polite">
-      <span
-        className={`h-2 w-2 rounded-full ${up ? "bg-emerald-500 shadow-[0_0_8px_emerald-400]" : "bg-rose-500 shadow-[0_0_8px_rose-400]"} animate-pulse`}
-        aria-hidden
-      />
-      <span className="text-white/70">Mid-market drift</span>
-      <span className={`num ${up ? "text-emerald-500" : "text-rose-500"}`}>{up ? "+" : ""}{v.toFixed(2)}%</span>
-    </div>
+    <section id="platform" className="hz-platform">
+      <div className="hz-container">
+        <div className="hz-section-heading hz-platform-heading">
+          <div><SectionEyebrow>THE PLATFORM</SectionEyebrow><h2>Money moves.<br/><em>Stay in control.</em></h2></div>
+          <p>Beautifully organized tools to see what you have, understand what happened, and decide what comes next.</p>
+        </div>
+        <div className="hz-bento-grid">
+          <article className="hz-bento hz-bento-accounts"><div className="hz-bento-copy"><span className="hz-feature-index">01 / OVERVIEW</span><h3>The whole picture.<br/>One simple view.</h3><p>Checking, savings and the details that matter, in one place that makes sense.</p><Link href="/dashboard/dashboard">Explore your dashboard <ArrowUpRight size={17}/></Link></div><OverviewBento /></article>
+          <article className="hz-bento hz-bento-transfers"><div className="hz-bento-copy"><span className="hz-feature-index">02 / TRANSFERS</span><h3>Make your next move with clarity.</h3><p>Submit a transfer request and follow its review status without the guesswork.</p><Link href="/dashboard/transfers">Explore transfer requests <ArrowUpRight size={17}/></Link></div><RequestBento /></article>
+          <article className="hz-bento hz-bento-activity"><span className="hz-feature-index">03 / ACTIVITY</span><div className="hz-bento-icon hz-bento-icon-blue"><Activity size={27}/></div><h3>Every detail, accounted for.</h3><p>Understand your ledger activity and separate requests from posted entries.</p><div className="hz-bento-mini-table" aria-hidden="true"><span><i className="hz-list-circle one"/>Account activity</span><span className="hz-bento-line"/><span><i className="hz-list-circle two"/>Review history</span></div></article>
+          <article className="hz-bento hz-bento-security"><span className="hz-feature-index">04 / SECURITY</span><div className="hz-bento-icon hz-bento-icon-purple"><Fingerprint size={28}/></div><h3>Built with boundaries.</h3><p>Account access and sensitive financial changes are protected by Supabase authentication and database rules.</p><div className="hz-security-lattice" aria-hidden="true"><ShieldCheck size={56} strokeWidth={1.25}/></div></article>
+          <article className="hz-bento hz-bento-flow"><span className="hz-feature-index">05 / EXPERIENCE</span><div className="hz-bento-icon hz-bento-icon-green"><Sparkles size={27}/></div><h3>Less clutter.<br/>More headspace.</h3><p>Thoughtful design that gives the important things more room to breathe.</p><div className="hz-flow-swoosh" aria-hidden="true"><span/><span/><span/></div></article>
+        </div>
+      </div>
+    </section>
   );
 }
 
-/* ──────────────────────────────────────────────────────────
-   UI HELPERS
-────────────────────────────────────────────────────────── */
-const GlassPanel = ({ children, className = "" }: { children: ReactNode; className?: string }) => (
-  <div className={`relative rounded-2xl p-6 md:p-7 bg-white/6 backdrop-blur-2xl ring-1 ring-white/12 shadow-[0_12px_40px_rgba(0,0,0,0.5)] ${className}`}>
-    <span
-      aria-hidden
-      className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-[inherit] opacity-80"
-      style={{ background: "linear-gradient(90deg, rgba(0,224,255,.9), rgba(155,92,255,.6))" }}
-    />
-    <span className="pointer-events-none absolute inset-[1px] rounded-[calc(theme(borderRadius.2xl)-1px)] [background:linear-gradient(90deg,#00D4FF77,#00E0FF44)] opacity-70" />
-    <div className="relative">{children}</div>
-  </div>
-);
+function ShowcaseContent({ tab }: { tab: PreviewTab }) {
+  if (tab === "transfers") return <div className="hz-demo-body">
+    <div className="hz-demo-panel-heading"><div><small>Transfers</small><h4>Send with intention.</h4></div><span className="hz-demo-pill"><Clock3 size={13}/> Request workflow</span></div>
+    <div className="hz-demo-transfer"><div className="hz-demo-field"><small>Destination</small><strong>Recipient or destination</strong><span>Choose a payment method <ChevronDown size={15}/></span></div><div className="hz-demo-field hz-demo-field-amount"><small>Amount</small><strong>$ 1,280.00</strong><span>USD · Example</span></div></div>
+    <div className="hz-demo-process"><span className="hz-done"><CheckCircle2 size={16}/> Submitted</span><span className="hz-process-bar"/><span className="hz-active"><Clock3 size={16}/> Under review</span><span className="hz-process-bar faded"/><span>Decision</span></div>
+    <div className="hz-demo-info"><ShieldCheck size={18}/><span>Requests are reviewed before internal ledger updates. This preview does not send real funds.</span></div>
+  </div>;
+  if (tab === "activity") return <div className="hz-demo-body">
+    <div className="hz-demo-panel-heading"><div><small>Activity</small><h4>Know what happened.</h4></div><span className="hz-demo-pill">Example records</span></div>
+    <div className="hz-demo-activity-head"><span>ACTIVITY</span><span>STATUS</span><span>AMOUNT</span></div>
+    {[
+      {name:"Account adjustment", date:"Sample · Today", up:true, status:"Posted", amount:"+$1,250.00"},
+      {name:"Transfer request", date:"Sample · Yesterday", up:false, status:"Pending", amount:"−$320.00"},
+      {name:"Account adjustment", date:"Sample · Monday", up:true, status:"Posted", amount:"+$840.00"},
+    ].map((t, i) => <div className="hz-demo-activity-row" key={i}><div><span className={`hz-demo-tx-icon ${t.up ? "up" : "down"}`}>{t.up ? <ArrowDownLeft size={18}/> : <ArrowUpRight size={18}/>}</span><span><strong>{t.name}</strong><small>{t.date}</small></span></div><span className={`hz-demo-status ${t.status === "Posted" ? "posted" : "pending"}`}>{t.status}</span><strong>{t.amount}</strong></div>)}
+  </div>;
+  return <div className="hz-demo-body">
+    <div className="hz-demo-panel-heading"><div><small>Overview</small><h4>It all adds up.</h4></div><span className="hz-demo-pill"><span className="hz-status-dot"/> Illustrative view</span></div>
+    <div className="hz-demo-overview-cards"><div><span>Total balance</span><strong>$24,680<span>.50</span></strong><small>Checking + savings</small></div><div><span>Account types</span><strong>02</strong><small>In one view</small></div></div>
+    <div className="hz-demo-graph"><div><strong>Account overview</strong><span>JAN — JUN</span></div><FlowChart light/></div>
+  </div>;
+}
 
-const Primary = ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-  <button
-    onClick={onClick}
-    className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-medium bg-[linear-gradient(180deg,#00D4FF,#00B4D8)] text-[#0B0F14] shadow-[0_10px_30px_rgba(0,212,255,.45)] hover:scale-[1.02] active:scale-[.98] focus:outline-none focus:ring-2 focus:ring-[#00E0FF]/50 transition-all"
-  >
-    {children}
-  </button>
-);
-
-const Ghost = ({ children, href = "#" }: { children: ReactNode; href?: string }) => (
-  <Link
-    href={href}
-    className="inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium border border-white/20 text-white/95 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all"
-  >
-    {children}
-  </Link>
-);
-
-/* ──────────────────────────────────────────────────────────
-   STAIR ITEM
-────────────────────────────────────────────────────────── */
-const StairItem = ({
-  step,
-  children,
-  className = "",
-}: {
-  step: 0 | 1 | 2;
-  children: ReactNode;
-  className?: string;
-}) => {
-  const offsets = step === 0 ? "ml-0 translate-y-0" : step === 1 ? "ml-3 -mt-6" : "ml-6 -mt-6";
-  const z = step === 0 ? "z-30" : step === 1 ? "z-20" : "z-10";
-  const delay = step === 2 ? 0 : step === 1 ? 0.15 : 0.3;
-  const shadow =
-    step === 0
-      ? "shadow-[0_14px_45px_rgba(0,0,0,.5)]"
-      : step === 1
-      ? "shadow-[0_12px_35px_rgba(0,0,0,.42)]"
-      : "shadow-[0_10px_28px_rgba(0,0,0,.35)]";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      whileInView={{ opacity: 1, y: 0, scale: 1 }}
-      viewport={{ once: true, amount: 0.35 }}
-      transition={{ duration: 0.6, ease: "easeOut", delay }}
-      className={`relative ${offsets} ${z} ${shadow} md:ml-0 md:mt-0 md:translate-y-0 ${className}`}
-    >
-      <span className="md:hidden pointer-events-none absolute left-0 top-2 bottom-4 w-px bg-white/12" />
-      {children}
-    </motion.div>
-  );
+const showcaseCopy: Record<PreviewTab, {title: string; description: string; note: string}> = {
+  overview: {title: "Everything in view.", description: "Your most important numbers, a cleaner snapshot, and less digging through menus.", note: "A single home for your accounts"},
+  transfers: {title: "No more guessing.", description: "Create a request, see where it stands, and follow each step of the review process.", note: "Transparent request statuses"},
+  activity: {title: "The details are right there.", description: "Searchable account activity and clear status labels help you keep your records straight.", note: "An organized history, always"},
 };
 
-/* ──────────────────────────────────────────────────────────
-   PAGE
-────────────────────────────────────────────────────────── */
-export default function Page() {
-  const router = useRouter();
-
-  const slides: OverlaySlide[] = [
-    {
-      id: "security",
-      backdrop: "/Hero/slide1.jpg",
-      eyebrow: "Banking • Secure",
-      title: "Your money, guarded and growing.",
-      body: "Open in 2 minutes. 256-bit TLS, biometric sign-in, instant fraud alerts. Earn while your balance rests.",
-      cta: { label: "Get started", href: P("CREATE_ACCOUNT", "/create-account") },
-      align: "left",
-    },
-    {
-      id: "cards",
-      backdrop: "/Hero/slide2.jpg",
-      eyebrow: "Cards & Payments",
-      title: "One card for life on the move.",
-      body: "Tap to pay, create virtual cards for subs, freeze in one tap. Split bills that settle instantly.",
-      cta: { label: "Get your card", href: P("CREATE_ACCOUNT", "/create-account") },
-      align: "right",
-    },
-    {
-      id: "global",
-      backdrop: "/Hero/slide3.jpg",
-      eyebrow: "Multi-currency • FX",
-      title: "Go global without the hidden fees.",
-      body: "Hold 10+ currencies, receive like a local, convert at great rates—straight from your balance card.",
-      cta: { label: "Open multi-currency", href: P("INTERNATIONAL", P("CREATE_ACCOUNT", "/create-account")) },
-      align: "center",
-    },
-  ];
-
-  const heroRef = useRef<HTMLDivElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const goCreate = () => router.push(P("CREATE_ACCOUNT", "/create-account"));
-
-  return (
-    <div className="bg-[#0B0F14] text-white">
-      {/* ✅ the ONLY header on this page */}
-      <Nav />
-
-      {/* push content below fixed header (84px mobile / 64px md+) */}
-      <div className="pt-[84px] md:pt-[64px]">
-        <BackgroundFX />
-
-        {/* floaters */}
-        <FloatingIcon className="left-4 top-28 hidden md:block" delay={0.4} distance={16} duration={7}>
-          <ShieldCheck size={32} />
-        </FloatingIcon>
-        <FloatingIcon className="right-6 top-40 hidden lg:block" delay={0.9} distance={20} duration={8}>
-          <CreditCard size={34} />
-        </FloatingIcon>
-        <FloatingIcon className="left-10 top-[60vh] hidden md:block" delay={0.2} distance={18} duration={7.5}>
-          <LineChart size={32} />
-        </FloatingIcon>
-        <FloatingIcon className="right-10 top-[68vh] hidden xl:block" delay={1.2} distance={22} duration={9}>
-          <Globe2 size={34} />
-        </FloatingIcon>
-        <FloatingIcon className="left-20 top-16 hidden lg:block" delay={0.6} distance={14} duration={6}>
-          <Zap size={30} />
-        </FloatingIcon>
-        <FloatingIcon className="right-20 bottom-20 hidden md:block" delay={1.0} distance={16} duration={7}>
-          <Wallet size={32} />
-        </FloatingIcon>
-
-        {/* === Overlay Hero === */}
-        <div
-          ref={heroRef}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          className="relative"
-        >
-          <OverlayHero slides={slides} autoMs={6500} />
-
-          {/* micro trust bar under hero */}
-          <div className="container-x -mt-6 md:-mt-8">
-            <div className="rounded-xl border border-white/12 bg-white/6 backdrop-blur-xl px-4 py-3 text-[13px] grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" /> 2-factor & biometric
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4" /> 99.995% uptime
-              </div>
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4" /> Visa • MC • Apple Pay
-              </div>
-              <div className="hidden md:flex items-center gap-2">
-                <Globe2 className="h-4 w-4" /> 10+ currencies
-              </div>
-            </div>
-          </div>
+function LivePreview() {
+  const [tab, setTab] = useState<PreviewTab>("overview");
+  return <section className="hz-interactive" id="experience">
+    <div className="hz-container hz-interactive-wrap">
+      <div className="hz-interactive-header"><SectionEyebrow light>GET A FEEL FOR IT</SectionEyebrow><h2>See the difference<br/><em>for yourself.</em></h2><p>Switch between the views below for a glimpse of how Horizon keeps the essentials easy to find.</p></div>
+      <div className="hz-interactive-grid">
+        <div className="hz-preview-options" role="tablist" aria-label="Explore the Horizon interface">
+          {(["overview", "transfers", "activity"] as const).map((key, i) => <button
+            key={key}
+            type="button"
+            id={`hz-tab-${key}`}
+            role="tab"
+            aria-selected={tab === key}
+            aria-controls="hz-preview-panel"
+            className={`hz-preview-option${tab === key ? " is-active" : ""}`}
+            onClick={() => setTab(key)}
+          ><span className="hz-preview-option-num">0{i+1}</span><span><strong>{showcaseCopy[key].title}</strong><small>{showcaseCopy[key].description}</small></span><ArrowUpRight size={20}/></button>)}
+          <div className="hz-preview-caption"><CheckCircle2 size={17}/>{showcaseCopy[tab].note}</div>
         </div>
-
-        {/* === Feature: Core Banking Capabilities (refined, no figure) === */}
-        <FeatureSectionPro
-          id="features"
-          eyebrow="Discover"
-          title="Core Banking Capabilities"
-          subtitle="Cards, payments, savings and insights — engineered to work as one."
-          center
-          childrenClassName="overflow-visible"
-        >
-          <div className="relative mx-auto max-w-[1120px]">
-            {/* ambient corner glows */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -z-10 -top-6 left-0 h-40 w-40 rounded-full blur-[42px] opacity-30"
-              style={{ background: "radial-gradient(closest-side, rgba(0,224,255,.35), transparent 70%)" }}
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -z-10 -top-4 right-4 h-32 w-32 rounded-full blur-[38px] opacity-25"
-              style={{ background: "radial-gradient(closest-side, rgba(155,92,255,.35), transparent 70%)" }}
-            />
-
-            {/* chip rail */}
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
-              {[
-                ["Transfers", true],
-                ["Cards", false],
-                ["Insights", false],
-                ["Vaults", false],
-              ].map(([label, active]) => (
-                <span
-                  key={label as string}
-                  className={[
-                    "inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] border transition",
-                    active
-                      ? "border-white/25 bg-white/10 shadow-[0_0_0_1px_rgba(255,255,255,.22),0_0_24px_rgba(0,224,255,.18)]"
-                      : "border-white/15 bg-white/5 hover:bg-white/10",
-                  ].join(" ")}
-                >
-                  {label as string}
-                </span>
-              ))}
-            </div>
-
-            {/* framed carousel (glass + gradient hairline) */}
-            <div className="relative rounded-2xl ring-1 ring-white/12 bg-white/5 backdrop-blur-2xl shadow-[0_18px_60px_rgba(0,0,0,.45)] overflow-hidden">
-              {/* gradient top hairline */}
-              <span
-                aria-hidden
-                className="absolute inset-x-0 top-0 h-[2px] opacity-80"
-                style={{ background: "linear-gradient(90deg, rgba(0,224,255,.9), rgba(155,92,255,.6))" }}
-              />
-              {/* subtle grid texture */}
-              <div
-                aria-hidden
-                className="absolute inset-0 opacity-[.18] pointer-events-none"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px)",
-                  backgroundSize: "24px 24px",
-                  maskImage:
-                    "radial-gradient(80% 70% at 50% 40%, #000 60%, transparent 100%)",
-                  WebkitMaskImage:
-                    "radial-gradient(80% 70% at 50% 40%, #000 60%, transparent 100%)",
-                }}
-              />
-              {/* ambient halo */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-24 -bottom-24 h-80 w-80 rounded-full blur-3xl opacity-30"
-                style={{ background: "radial-gradient(circle, rgba(0,224,255,.28), transparent 60%)" }}
-              />
-              {/* content */}
-              <div className="p-2 sm:p-3 md:p-4">
-                <div className="flex justify-center">
-                  <div className="w-full max-w-[980px]">
-                    <FeatureCarouselPro />
-                  </div>
-                </div>
-              </div>
-
-              {/* caption / status bar */}
-              <div className="border-t border-white/10 bg-white/[.04] backdrop-blur-xl px-3 sm:px-4 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1.5 text-white/80">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Instant transfers (median 0.2s)
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 text-white/65">
-                      <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                      Virtual cards • Limits • Freeze
-                    </span>
-                  </div>
-                  <Link
-                    href={P("CREATE_ACCOUNT", "/create-account")}
-                    className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] font-medium bg-[linear-gradient(180deg,#00E0FF,#00B4D8)] text-[#0B0F14] shadow-[0_10px_28px_rgba(0,212,255,.38)] hover:scale-[1.02] active:scale-[.98] transition-all"
-                  >
-                    Get started <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </div>
-            </div>
-
-            {/* micro trust strip under the frame */}
-            <div className="mt-4 grid grid-cols-3 gap-2 text-[11px] sm:text-xs">
-              <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2.5 py-2 backdrop-blur md:justify-center">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_#33D69F]" />
-                99.995% uptime
-              </div>
-              <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2.5 py-2 backdrop-blur md:justify-center">
-                <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_14px_#00E0FF]" />
-                2,000,000+ users
-              </div>
-              <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-2.5 py-2 backdrop-blur md:justify-center">
-                <span className="h-2 w-2 rounded-full bg-violet-500 shadow-[0_0_14px_#9B5CFF]" />
-                10+ currencies
-              </div>
-            </div>
-          </div>
-        </FeatureSectionPro>
-
-        {/* === WHY HORIZON === */}
-        <FeatureSectionPro
-          id="why"
-          eyebrow="Why Horizon"
-          title="Everything you need — without the noise"
-          subtitle="Fast onboarding, clean controls, and helpful automation."
-          childrenClassName="overflow-visible"
-        >
-          <StickyWhyMobile />
-          <div className="mt-6">
-            <ZigZagRow
-              items={[
-                <div key="1">
-                  <h4 className="font-medium">
-                    <Link href={P("CREATE_ACCOUNT", "/create-account")} className="hover:underline">
-                      Instant transfers
-                    </Link>
-                  </h4>
-                  <p className="text-white/70 text-sm mt-1">Smart-routed domestic payments land in ~0.2 s.</p>
-                </div>,
-                <div key="2">
-                  <h4 className="font-medium">
-                    <Link href={P("SAVINGS", "/create-account")} className="hover:underline">
-                      Smart vaults
-                    </Link>
-                  </h4>
-                  <p className="text-white/70 text-sm mt-1">Round-ups, salary skim, and targets with progress rings.</p>
-                </div>,
-                <div key="3">
-                  <h4 className="font-medium">
-                    <Link href={P("INTERNATIONAL", "/create-account")} className="hover:underline">
-                      Transparent FX
-                    </Link>
-                  </h4>
-                  <p className="text-white/70 text-sm mt-1">Live rate and fee shown upfront. No surprises.</p>
-                </div>,
-              ]}
-            />
-          </div>
-
-          <div className="hidden lg:grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-visible mt-10">
-            <StairItem step={0}>
-              <FeatureCardUltra
-                icon={<ArrowRight size={20} />}
-                title="Instant transfers"
-                body="Smart-routed domestic payments land in ~0.2 s."
-                demo="demo> transfer --speed .2s"
-                effect="beam"
-                href={P("CREATE_ACCOUNT", "/create-account")}
-              />
-            </StairItem>
-            <StairItem step={1}>
-              <FeatureCardUltra
-                icon={<CreditCard size={20} />}
-                title="Cards that obey"
-                body="Freeze, set limits, and one-time virtual cards for subs."
-                demo="card.freeze() // done"
-                effect="freeze"
-                href={P("CARDS", "/cards")}
-              />
-            </StairItem>
-            <StairItem step={2}>
-              <FeatureCardUltra
-                icon={<BarChart3 size={20} />}
-                title="Clarity on spend"
-                body="Live insights with clean, explorable charts."
-                demo="insights.open('spend')"
-                effect="chart"
-                href={P("INSIGHTS", "/create-account")}
-              />
-            </StairItem>
-          </div>
-        </FeatureSectionPro>
-
-        {/* === Balance + FX Demo === */}
-        <section id="fx" className="container-x section-pad grid lg:grid-cols-2 gap-6">
-          <div className="flex flex-col gap-4 max-w-[520px] md:max-w-none mx-auto w-full">
-            <div className="px-1 sm:px-0">
-              <div className="[&_.balance-lead]:leading-[1.15] [&_.balance-lead]:text-[26px] xs:[&_.balance-lead]:text-[28px]">
-                <BalanceCard />
-              </div>
-            </div>
-            <QuickActions />
-            <GlassPanel>
-              <div className="flex items-center justify-between">
-                <div className="text-[18px] font-medium">
-                  <Link href={P("SAVINGS", "/create-account")} className="hover:underline">
-                    Smart Vault
-                  </Link>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ProgressRing value={0.42} />
-                  <span className="text-xs text-white/70">42% of goal</span>
-                </div>
-              </div>
-              <div className="mt-2 text-[13px] leading-[1.35] text-white/70">
-                Round-ups and salary skim help you hit goals without thinking.
-              </div>
-              <div className="mt-3">
-                <Link href={P("SAVINGS", "/create-account")} className="text-xs text-cyan-300 hover:underline">
-                  Learn about Savings & Goals →
-                </Link>
-              </div>
-            </GlassPanel>
-          </div>
-
-          <div className="card p-6 md:p-8 relative overflow-hidden">
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-[2px] rounded-t-[inherit] opacity-70"
-              style={{ background: "linear-gradient(90deg, rgba(0,224,255,.8), rgba(155,92,255,.5))" }}
-            />
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[18px] font-medium">
-                <Link href={P("INTERNATIONAL", "/create-account")} className="hover:underline">
-                  FX converter
-                </Link>
-              </div>
-              <FxTicker />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="card p-3">
-                <div className="text-xs text-[var(--c-text-muted)] mb-1">From (USD 🇺🇸)</div>
-                <div className="text-[16px] num">$1,000.00</div>
-              </div>
-              <div className="card p-3">
-                <div className="text-xs text-[var(--c-text-muted)] mb-1">To (EUR 🇪🇺)</div>
-                <div className="text-[16px] num">€919.40</div>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text=[var(--c-text-muted)]">Mid-market rate ticks ±0.01 every 4 s</div>
-            <div className="mt-3">
-              <Link href={P("INTERNATIONAL", "/create-account")} className="text-xs text-cyan-300 hover:underline">
-                See international transfers →
-              </Link>
-            </div>
-            <div className="pointer-events-none absolute -right-20 -bottom-20 h-80 w-80 rounded-full blur-3xl opacity-25 bg-cyan-500" />
-          </div>
-        </section>
-
-        <TrustStrip />
-        <Testimonials />
-
-        {/* === CTA === */}
-        <section
-          id="cta"
-          className="container-x section-pad text-center bg-gradient-to-b from-transparent to-white/5 rounded-3xl shadow-[0_20px_60px_rgba(0,224,255,0.15)] p-8"
-        >
-          <h2 className="text-[28px] md:text-[36px] font-semibold">Join 2 million users redefining money</h2>
-          <p className="mt-2 text-[var(--c-text-2)]">Cyan accent. Calm and confident. No clutter.</p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Primary onClick={goCreate}>
-              Get Started <ArrowRight className="h-4 w-4" />
-            </Primary>
-            {/* Download routes are not in your tree → send to Create Account */}
-            <Ghost href={P("CREATE_ACCOUNT", "/create-account")}>Download App</Ghost>
-          </div>
-        </section>
-
-        {/* === Footer === */}
-        <footer className="relative mt-16">
-          <div className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 h-32 w-[80%] max-w-5xl rounded-full blur-3xl opacity-30 bg-gradient-to-r from-cyan-500 to-violet-600" />
-          <div
-            aria-hidden
-            className="h-px w-full"
-            style={{
-              background: "linear-gradient(90deg, transparent, rgba(255,255,255,.16), transparent)",
-            }}
-          />
-          <div className="container-x py-10 md:py-14">
-            <div className="grid gap-10 md:gap-12 lg:grid-cols-12">
-              <div className="lg:col-span-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-7 w-7 rounded-full bg-gradient-to-b from-cyan-500 to-emerald-500" />
-                  <span className="font-semibold text-[18px]">Horizon</span>
-                </div>
-                <p className="mt-3 text-[var(--c-text-2)]">Modern money, beautifully simple.</p>
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <Link href={P("CREATE_ACCOUNT", "/create-account")} className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
-                    Download on App Store
-                  </Link>
-                  <Link href={P("CREATE_ACCOUNT", "/create-account")} className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm hover:bg-white/10">
-                    Get it on Google Play
-                  </Link>
-                </div>
-                <div className="mt-6 flex items-center gap-3 text-white/70">
-                  <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" aria-label="Twitter" className="p-2 rounded-lg hover:bg-white/10"><Twitter size={18} /></a>
-                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="p-2 rounded-lg hover:bg-white/10"><Github size={18} /></a>
-                  <a href="https://www.linkedin.com" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn" className="p-2 rounded-lg hover:bg-white/10"><Linkedin size={18} /></a>
-                  <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="p-2 rounded-lg hover:bg-white/10"><Youtube size={18} /></a>
-                </div>
-                <div className="mt-6 flex items-center gap-2 text-xs text-[var(--c-text-2)]">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                  FDIC-insured partners • 256-bit TLS
-                </div>
-              </div>
-
-              <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-8">
-                <FooterCol
-                  title="Product"
-                  links={[
-                    ["Accounts", P("CREATE_ACCOUNT", "/create-account")],
-                    ["Cards & Controls", P("CARDS", "/cards")],
-                    ["Savings & Goals", P("SAVINGS", "/savings")],
-                    ["Invest", P("INVEST", "/invest")],
-                  ]}
-                />
-                <FooterCol
-                  title="Company"
-                  links={[
-                    ["About", P("ABOUT", "/about")],
-                    ["Careers", P("CAREERS", "/careers")],
-                    ["Press", P("BLOG", "/blog")],
-                    ["Security", P("SECURITY", "/security")],
-                  ]}
-                />
-                <FooterCol
-                  title="Legal"
-                  links={[
-                    ["Privacy", P("PRIVACY", "/create-account")],
-                    ["Terms", P("TERMS", "/create-account")],
-                    ["Licenses", P("LICENSES", "/create-account")],
-                    ["Disclosures", P("DISCLOSURES", "/create-account")],
-                  ]}
-                />
-                <FooterCol
-                  title="Support"
-                  links={[
-                    ["Help Center", P("SUPPORT", "/create-account")],
-                    ["Status", P("STATUS", "/create-account")],
-                    ["Contact", P("CONTACT", "/create-account")],
-                    ["Developers", P("CREATE_ACCOUNT", "/create-account")],
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="mt-10 md:mt-14 flex flex-col gap-4 border-t border-[var(--c-hairline)]/80 pt-6 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <button className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 hover:bg-white/10">
-                  <Globe size={16} className="opacity-80" />
-                  English (US)
-                  <ChevronDown size={14} className="opacity-70" />
-                </button>
-                <button className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 hover:bg-white/10">
-                  USD
-                  <ChevronDown size={14} className="opacity-70" />
-                </button>
-                <span className="ml-1 text-[var(--c-text-2)] text-sm">
-                  Status: <span className="text-emerald-400">All systems normal</span>
-                </span>
-              </div>
-
-              <div className="text-sm text-[var(--c-text-2)]">
-                © {new Date().getFullYear()} Horizon Bank Inc. All rights reserved.
-              </div>
-            </div>
-          </div>
-        </footer>
-
-        <SupportDock />
+        <div className="hz-preview-frame"><div className="hz-demo-browser"><div className="hz-demo-browser-top"><span className="hz-browser-dots"><i/><i/><i/></span><span><MiniLogo/> horizon / {tab}</span><span className="hz-browser-end"><LockKeyhole size={12}/></span></div><div id="hz-preview-panel" role="tabpanel" aria-labelledby={`hz-tab-${tab}`}><ShowcaseContent tab={tab}/></div></div><div className="hz-demo-annotation">Interactive product preview · sample data only</div></div>
       </div>
     </div>
-  );
+  </section>;
 }
 
-/* helper for footer link columns */
-function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
-  return (
-    <div>
-      <div className="text-[13px] font-medium tracking-wide text-white/90 mb-2">{title}</div>
-      <ul className="space-y-2 text-[14px] text-[var(--c-text-2)]">
-        {links.map(([label, href]) => (
-          <li key={label}>
-            <Link href={href} className="hover:text-white">
-              {label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+const steps = [
+  {number:"01", title:"Create your space.", body:"Register your Horizon profile using secure email authentication.", icon:Plus},
+  {number:"02", title:"Find your footing.", body:"Head to your dashboard to see your checking and savings ledger accounts.", icon:WalletCards},
+  {number:"03", title:"Stay in the know.", body:"Submit requests, monitor decisions, and see your activity in one place.", icon:ArrowRightLeft},
+];
+
+function HowItWorks() {
+  return <section className="hz-steps" id="how-it-works"><div className="hz-container"><div className="hz-steps-heading"><div><SectionEyebrow>THREE SIMPLE STEPS</SectionEyebrow><h2>Getting started<br/>feels <em>easy.</em></h2></div><p>Your new financial workspace is just a few steps away.</p></div><div className="hz-steps-grid">{steps.map((step) => {const Icon = step.icon; return <article className="hz-step" key={step.number}><span className="hz-step-num">{step.number} <ArrowUpRight size={16}/></span><span className="hz-step-icon"><Icon size={27}/></span><h3>{step.title}</h3><p>{step.body}</p></article>;})}</div><Link href="/create-account" className="hz-steps-link">Get started with Horizon <ArrowRight size={18}/></Link></div></section>;
+}
+
+const faqs = [
+  { q: "What can I do with Horizon?", a: "You can create a profile, view your internal checking and savings ledger balances, browse account activity, and submit transfer requests for review." },
+  { q: "Can I send or receive real bank payments?", a: "Not yet. This version is a financial dashboard prototype. Transfer requests and balances are internal records; no external bank transfer, deposit, card issuance, or live payment processing is connected." },
+  { q: "How is my account information protected?", a: "Horizon uses Supabase authentication and database row-level security. Sensitive ledger changes and transfer approvals are handled through role-checked database functions rather than direct browser edits." },
+  { q: "Where do I track a transfer request?", a: "Sign in and open Transfers or Activity. Each request displays its status as pending, approved, or rejected, depending on the review outcome." },
+  { q: "How do I get help?", a: "Visit the Support section from your dashboard or the public support page. For security, never share your password or secret authentication codes with anyone." },
+];
+
+function FrequentlyAsked() {
+  return <section className="hz-faq" id="faqs"><div className="hz-container hz-faq-grid"><div className="hz-faq-heading"><SectionEyebrow>GOOD TO KNOW</SectionEyebrow><h2>Questions?<br/><em>Answered.</em></h2><p>Clear answers, just like the rest of your experience.</p><Link href="/support">More questions? Visit support <ArrowUpRight size={17}/></Link></div><div className="hz-faq-list">{faqs.map((faq, i) => <details key={faq.q} className="hz-faq-item" open={i === 0}><summary><span>{faq.q}</span><Plus size={20} className="hz-faq-plus"/></summary><p>{faq.a}</p></details>)}</div></div></section>;
+}
+
+function Footer() {
+  return <footer className="hz-footer"><div className="hz-container"><div className="hz-footer-upper"><div className="hz-footer-brand"><Wordmark light/><p>More clarity for your money.<br/>More space for what&apos;s next.</p></div><div className="hz-footer-links"><div><strong>Explore</strong><a href="#platform">The platform</a><a href="#why-horizon">Why Horizon</a><a href="#how-it-works">How it works</a><a href="#faqs">FAQs</a></div><div><strong>Your account</strong><Link href="/create-account">Create account</Link><Link href="/dashboard/loginpage">Log in</Link><Link href="/dashboard/dashboard">Dashboard</Link><Link href="/dashboard/transfers">Transfers</Link></div><div><strong>Company</strong><Link href="/about">About</Link><Link href="/security">Security</Link><Link href="/support">Support</Link><Link href="/careers">Careers</Link></div></div></div><div className="hz-footer-disclosure"><ShieldCheck size={17}/><p><strong>About this version:</strong> Horizon is a Supabase-backed financial dashboard prototype. Account balances are internal ledger records, not bank deposits. It does not currently process real payments or issue bank accounts or cards.</p></div><div className="hz-footer-lower"><span>© {new Date().getFullYear()} Horizon. Crafted for a clearer view.</span><span>Built around clarity <span aria-hidden="true">✳</span></span><a href="#top">Back to top ↑</a></div></div></footer>;
+}
+
+export default function Page() {
+  return <div className="hz-site" id="top"><Header/><main>
+    <section className="hz-hero"><div className="hz-hero-glow" aria-hidden="true"/><div className="hz-hero-grid" aria-hidden="true"/><div className="hz-container hz-hero-content"><div className="hz-hero-copy"><div className="hz-hero-tag"><span className="hz-tag-pulse"/> A new perspective on your finances <ArrowUpRight size={13}/></div><h1>Your money.<br/>A better <em>perspective.</em></h1><p>Everything that matters, beautifully in view. Meet the simpler, smarter space to understand your accounts and stay in control of every next move.</p><div className="hz-hero-ctas"><Link href="/create-account" className="hz-button hz-button-primary">Create your account <ArrowUpRight size={19}/></Link><a href="#experience" className="hz-button hz-button-ghost">Explore the experience <ArrowRight size={18}/></a></div><div className="hz-hero-micro"><span><CheckCircle2 size={16}/> A clear account overview</span><span><ShieldCheck size={16}/> Protected account access</span></div></div><HeroProduct/></div><div className="hz-container hz-hero-bottom"><div><span className="hz-hero-bottom-dash"/> BUILT FOR WHAT&apos;S NEXT</div><span>SCROLL TO DISCOVER <span aria-hidden="true">↓</span></span></div></section>
+    <div className="hz-value-band"><div className="hz-container hz-value-band-inner"><span>One place.<br/><strong>All your essentials.</strong></span><span className="hz-value-band-divider"/><span><Layers3 size={20}/> Account overview</span><span><ArrowRightLeft size={20}/> Transfer tracking</span><span><Activity size={20}/> Activity insights</span><span><LockKeyhole size={20}/> Secure access</span></div></div>
+    <section className="hz-philosophy" id="why-horizon"><div className="hz-container hz-philosophy-grid"><div><SectionEyebrow>MEET YOUR NEW NORMAL</SectionEyebrow><h2>Good finance feels<br/><em>effortless.</em></h2></div><div><p>Money is complicated enough. Your dashboard shouldn&apos;t be. We&apos;ve taken the noise out of the equation and put a clearer, calmer experience in its place.</p><a href="#platform" className="hz-text-link">Get to know Horizon <ArrowUpRight size={18}/></a></div></div></section>
+    <FeatureBento/>
+    <div className="hz-manifesto"><div className="hz-container"><span>THE HORIZON WAY</span><p>Less noise. <em>More possibility.</em></p><div aria-hidden="true" className="hz-manifesto-sun"><span/></div></div></div>
+    <LivePreview/>
+    <HowItWorks/>
+    <FrequentlyAsked/>
+    <section className="hz-final-cta"><div className="hz-container hz-final-content"><div className="hz-final-orbit" aria-hidden="true"/><SectionEyebrow light>YOUR NEXT CHAPTER</SectionEyebrow><h2>A brighter outlook<br/>starts <em>here.</em></h2><p>A better view of your finances is only a few clicks away.</p><div className="hz-final-actions"><Link href="/create-account" className="hz-button hz-button-primary">Get started with Horizon <ArrowUpRight size={19}/></Link><Link href="/dashboard/loginpage" className="hz-button hz-button-ghost">Already a member? Log in <ArrowRight size={18}/></Link></div><div className="hz-final-decoration" aria-hidden="true"><Globe2 size={21}/><span>LOOK FURTHER. MOVE FORWARD.</span></div></div></section>
+  </main><Footer/></div>;
 }
